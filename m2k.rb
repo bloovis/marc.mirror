@@ -139,7 +139,7 @@ def convert_record(record, recno, dryrun, writer)
     if collections.index('CD')
       # Kids' CDs
       kcall = "J CD #{author}"
-      kitem = 'MUS'
+      kitem = 'CD'
     elsif collections.index('DVD')
       kcall = "J DVD #{author}"
       kitem = 'DVD'
@@ -158,7 +158,7 @@ def convert_record(record, recno, dryrun, writer)
     elsif collection =~ /CAS/
       # Kids' cassettes
       kcall = "J CAS #{author}"
-      kitem = 'BK'
+      kitem = 'CAS'
     elsif collections.index('VID')
       # Kids' video cassettes
       kloc = 'CD'
@@ -402,6 +402,40 @@ def convert_record(record, recno, dryrun, writer)
     return
   end
 
+  # Make sure that sound recordings and movies have the correct item type.
+  if record['245'] && record['245']['h']
+    media = record['245']['h']
+    expected_kitem = /#{kitem}/
+    case media
+    when /dvd|video|filmmaterial/i
+      expected_kitem = /DVD|VC/
+    when /cd|compact|book on cd|sound recording|mp3 talking/i
+      expected_kitem = /CD/
+    when /music/i
+      expected_kitem = /MU/
+    when /kit/i
+      expected_kitem = /MX/
+    end
+    if kitem !~ expected_kitem
+      warn("Record #{recno} (#{title},#{prefix},#{collection},#{author},#{barcode}) has media type #{media} but item type is #{kitem}, expected #{expected_kitem.source}!")
+    end
+  end
+
+  # Convert acquisition date from YYMMDD to YYYY-MM-DD.
+  date = ''
+  if record['008']
+    rec = record['008'].value
+    if rec =~ /^(\d\d)(\d\d)(\d\d)/
+      year = $1
+      if year > '60'
+        year = '19' + year
+      else
+        year = '20' + year
+      end
+      date = "#{year}-#{$2}-#{$3}"
+    end
+  end
+      
   # Append 942 and 952 records required by Koha.
   unless dryrun
     record = cleanup_record(record)
@@ -411,9 +445,10 @@ def convert_record(record, recno, dryrun, writer)
     record.append(MARC::DataField.new(
       '952', ' ',  ' ',
       ['8', kcoll],
-      ['a', 'RPL'],
+      ['a', 'VSPS'],
       ['b', 'VSPS'],
       ['c', kloc],
+      ['d', date],
       ['o', kcall],
       ['p', barcode],
       ['v', price],
@@ -424,17 +459,29 @@ end
 
 # Check arguments. First is input file.  Second is output file.
 if ARGV.length < 2
-   puts "usage: m8toutf8.rb [-n] infile outfile"
+   puts "usage: m8toutf8.rb [-n] [-u] infile outfile"
    puts "-n : don't write outfile, just print records from infile"
+   puts "-u : use utf-8 encoding on infile instead of MARC-8"
    exit 1
 end
 
-if ARGV[0] == '-n'
-  ARGV.shift
-  dryrun = true
-else
-  dryrun = false
+
+dryrun = false
+encoding = 'MARC-8'
+
+nopts = 0
+ARGV.each do |arg|
+  if arg == '-n'
+    dryrun = true
+    nopts += 1
+  elsif arg == '-u'
+    encoding = 'utf-8'
+    nopts += 1
+  else
+    break
+  end
 end
+ARGV.shift(nopts)
 
 input_file = ARGV[0]
 output_file = ARGV[1]
@@ -446,11 +493,13 @@ unless dryrun
   end
 end
 
+puts("Reading #{input_file} using #{encoding} encoding")
 reader = MARC::Reader.new(input_file,
-                          :external_encoding => "MARC-8",
+                          :external_encoding => encoding,
 			  :internal_encoding => "utf-8",
                           :validate_encoding => true)
 unless dryrun
+  puts("Writing #{output_file} using utf-8 encoding")
   writer = MARC::Writer.new(output_file)
 end
 
