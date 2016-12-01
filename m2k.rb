@@ -421,8 +421,8 @@ def convert_record(record, recno, dryrun, writer)
     end
   end
 
-  # Convert acquisition date from YYMMDD to YYYY-MM-DD.
-  date = ''
+  # Convert holding acquisition date from YYMMDD to YYYY-MM-DD.
+  holding_date = ''
   if record['008']
     rec = record['008'].value
     if rec =~ /^(\d\d)(\d\d)(\d\d)/
@@ -432,10 +432,29 @@ def convert_record(record, recno, dryrun, writer)
       else
         year = '20' + year
       end
-      date = "#{year}-#{$2}-#{$3}"
+      holding_date = "#{year}-#{$2}-#{$3}"
     end
   end
       
+  # Convert bib entry date from YYMMDD to YYYY-MM-DD.
+  bib_date = ''
+  if record['908']
+    if rec = record['908']['a']
+      if rec =~ /^(\d\d)(\d\d)(\d\d)/
+	year = $1
+	if year > '60'
+	  year = '19' + year
+	else
+	  year = '20' + year
+	end
+	bib_date = "#{year}-#{$2}-#{$3}"
+      end
+    end
+  end
+
+  # Use the later of the two dates as the acquisition date.
+  date = [bib_date, holding_date].max
+
   # Append 942 and 952 records required by Koha.
   unless dryrun
     record = cleanup_record(record)
