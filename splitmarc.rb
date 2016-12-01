@@ -7,7 +7,7 @@ require 'marc'
 # Check arguments. First is input file.  Second is output file.
 if ARGV.length != 2
    puts "usage: splitmarc.rb infile size"
-   puts "size: maximum number of record in each output file"
+   puts "size: maximum number of records in each output file"
    puts "output files are 1.marc, 2.marc, etc."
    exit 1
 end
