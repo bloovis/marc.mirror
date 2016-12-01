@@ -50,85 +50,104 @@ def print_record(record, recno)
   end
 
   # Print out 852 holding fields.
-  puts("branch (852-a): '#{record['852']['a']}'")
-  puts("ILL branch (852-b): '#{record['852']['b']}'")
+  if record['852']
+    puts("branch (852-a): '#{record['852']['a']}'")
+    puts("ILL branch (852-b): '#{record['852']['b']}'")
 
-  # Parse prefix.
-  prefix = record['852']['k']
-  if prefix
-    prefix.strip!
-  else
-    prefix = ''
-  end
-  puts("prefix (852-k): '#{prefix}'")
-  prefixes = prefix.split
+    # Parse prefix.
+    prefix = record['852']['k']
+    if prefix
+      prefix.strip!
+    else
+      prefix = ''
+    end
+    puts("prefix (852-k): '#{prefix}'")
+    prefixes = prefix.split
 
-  # Parse collection.
-  collection = record['852']['h']
-  if collection
-    collection.strip!
-  else
-    collection = ''
-  end
-  puts("collection (852-h): '#{collection}'")
-  case collection
-  when /DVD/
-    itemtype = 'DVD'
-  when /CD/
-    itemtype = 'CD'
-  when /VID/
-    itemtype = 'VC'
-  when /computer|laptop/i
-    itemtype = 'PC'
-  when /pass/i
-    itemtype = 'PASS'
-  when /CAS/
-    itemtype = 'CAS'
-  when /CR MAGS/
-    itemtype = 'MAG'
-  end
-  if itemtype == 'DVD' && collection != 'DVD'
-    warn("Title '#{record['245']['a']}' has item type DVD but collection is '#{collection}'")
+    # Parse collection.
+    collection = record['852']['h']
+    if collection
+      collection.strip!
+    else
+      collection = ''
+    end
+    puts("collection (852-h): '#{collection}'")
+    case collection
+    when /DVD/
+      itemtype = 'DVD'
+    when /CD/
+      itemtype = 'CD'
+    when /VID/
+      itemtype = 'VC'
+    when /computer|laptop/i
+      itemtype = 'PC'
+    when /pass/i
+      itemtype = 'PASS'
+    when /CAS/
+      itemtype = 'CAS'
+    when /CR MAGS/
+      itemtype = 'MAG'
+    end
+    if itemtype == 'DVD' && collection != 'DVD'
+      warn("Title '#{record['245']['a']}' has item type DVD but collection is '#{collection}'")
+    end
+
+    author = record['852']['i']
+    if author
+      author.strip!
+    else
+      author = ''
+    end
+    puts("author (852-i): '#{author}'")
+
+    # Regularize the price.
+    puts("price (852-9): '#{record['852']['9']}'")
+
+    barcode = record['852']['p']
+    if barcode
+      barcode.strip!
+    else
+      warn("Title '#{record['245']['a']}' missing barcode")
+      barcode = ''
+    end
+    puts("barcode (852-p): '#{barcode}'")
   end
 
-  author = record['852']['i']
-  if author
-    author.strip!
-  else
-    author = ''
+  # Print electronic location.
+  if record['856']
+    if url = record['856']['u']
+      puts("URL (856-u): '#{url}'")
+    end
   end
-  puts("author (852-i): '#{author}'")
 
-  # Construct a Koha call number.
-  callnumber = [prefix, collection, author].join(' ').strip
-
-  # Regularize the price.
-  puts("price (852-9): '#{record['852']['9']}'")
-
-  barcode = record['852']['p']
-  if barcode
-    barcode.strip!
-  else
-    warn("Title '#{record['245']['a']}' missing barcode")
-    barcode = ''
+  # Print acquisition date.  Convert to yymmdd to YYYY-MM-DD.
+  if record['008']
+    rec = record['008'].value
+    if rec =~ /^(\d\d)(\d\d)(\d\d)/
+      year = $1
+      if year > '60'
+        year = '19' + year
+      else
+        year = '20' + year
+      end
+      date = "#{year}-#{$2}-#{$3}"
+      puts("Date (008): #{date}")
+    end
   end
-  puts("barcode (852-p): '#{barcode}'")
-#  if record['520']
-#    puts("description (520a): '#{record['520']['a']}'")
-#  end
 
   # Print Koha-specific records.
   if record['942']
     puts("Koha item type (942-c): '#{record['942']['c'] || "undefined"}'")
   end
   if record['952']
-    puts("Koha branch (952-a): '#{record['952']['a'] || "undefined"}'")
-    puts("Koha ILL branch (952-b): '#{record['952']['b']}'")
+    puts("Koha home branch (952-a): '#{record['952']['a'] || "undefined"}'")
+    puts("Koha holding branch (952-b): '#{record['952']['b']}'")
     puts("Koha collection (952-8): '#{record['952']['8'] || "undefined"}'")
     puts("Koha call number (952-o): '#{record['952']['o']}'")
     puts("Koha location (952-c): '#{record['952']['c']}'")
     puts("Koha price (952-v): '#{record['952']['v']}'")
     puts("Koha barcode (952-p): '#{record['952']['p'] || "undefined"}'")
+    puts("Koha acq. date (952-d): '#{record['952']['d'] || "undefined"}'")
     puts("Koha item type (952-y): '#{record['952']['y'] || "undefined"}'")
   end
 
