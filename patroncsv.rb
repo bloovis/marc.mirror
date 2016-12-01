@@ -4,22 +4,32 @@
 # patron import file.
 #
 # Most of the conversion involves examining the subfields of the MARC 100 field.
+#
+# The library branch code is hardcoded in the 'branch' variable below.  Change its
+# value as needed for your library.
 
 require 'marc'
+
+branch = 'VSPS'
 
 # Convert a Mandarin-generated MARC record to one
 # suitable for importing into Koha.
 
-def convert_record(record, recno)
-  # Print first and last name
+def convert_record(record, recno, branch)
+  # Extract first and last name.
   if record['100']
     firstname = record['100']['a'] || ''
     surname = record['100']['c'] || ''
   else
-    warn("Record #{recno} missing MARC field 100!")
+    warn("Record #{recno} missing MARC field 100: skipping.")
     return
   end
-  # 110    $a 40 Cannon Dr $b Rochester $c VT $e 05767 $k 967-8019 or 234 5505 
+  if firstname == '' || surname == ''
+    warn("Record #{recno} has empty firstname or surname: skipping.")
+    return
+  end
+
+  # Extract address and phone info.
   if record['110']
     address = record['110']['a'] || ''
     city = record['110']['b'] || ''
@@ -28,24 +38,22 @@ def convert_record(record, recno)
     phone = record['110']['k'] || ''
     email = record['110']['m'] || ''
   else
-    warn("Record #{recno} missing MARC field 110!")
-    return
+    warn("Record #{recno} (#{surname},#{firstname}) missing MARC field 110: using blank address.")
   end
   if record['852']
     cardnumber = record['852']['p'] || ''
   else
-    warn("Record #{recno} missing MARC field 852!")
+    warn("Record #{recno} missing MARC field 852 for barcode: skipping.")
     return
   end
   puts "\"#{surname}\",\"#{firstname}\",\"#{address}\",\"#{city}\",\"#{state}\"," +
        "\"#{zipcode}\",\"#{phone}\",\"#{email}\",\"#{cardnumber}\"," +
-       "RPL,PT"
+       "#{branch},PT"
 end
 
 # Check arguments. First is input file.
 if ARGV.length != 1
    puts "usage: patroncsv.rb infile"
-   puts "-n : don't write outfile, just print records from infile"
    exit 1
 end
 
@@ -61,5 +69,5 @@ recno = 0
 puts "surname,firstname,address,city,state,zipcode,phone,email,cardnumber,branchcode,categorycode"
 for record in reader
   recno += 1
-  convert_record(record, recno)
+  convert_record(record, recno, branch)
 end
