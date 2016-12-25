@@ -33,7 +33,8 @@ old_reader = MARC::Reader.new(old_file,
 for record in old_reader
   if record['852']
     barcode = record['852']['p']
-    barcodes[barcode] = 1
+    title = record['245']['a']
+    barcodes[barcode] = title
   end
 end
 
@@ -41,16 +42,29 @@ new_reader = MARC::Reader.new(new_file,
                              :external_encoding => "UTF-8",
 			     :internal_encoding => "utf-8",
                              :validate_encoding => true)
+puts "--------------"
+puts "Added holdings"
+puts "--------------"
 writer = MARC::Writer.new(diff_file)
 for record in new_reader
   if record['852']
     barcode = record['852']['p']
-    unless barcodes[barcode]
-      title = record['245']['a']
-      puts "Item #{barcode} (#{title}) is new"
+    title = record['245']['a']
+    if barcodes[barcode]
+      barcodes.delete(barcode)
+    else
+      puts "#{barcode} #{title}"
       writer.write(record)
     end
   end
 end
+
+puts "--------------"
+puts "Deleted holdings"
+puts "----------------"
+barcodes.each do |barcode, title|
+  puts "#{barcode} #{title}"
+end
+
 writer.close()
 
