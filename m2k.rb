@@ -178,9 +178,10 @@ def convert_record(record, recno, dryrun, writer)
 	kloc = 'YA'
 	kcall = "YA #{dewey} #{author}"
       else
-	# Other YA non-fiction is stored with adult non-fiction
+	# Other YA non-fiction is stored with adult non-fiction,
+	# but we keep the YA prefix on the call number.
 	kloc = 'NFIC'
-	kcall = "#{dewey} #{author}"
+	kcall = "YA #{dewey} #{author}"
       end
       kitem = 'BK'
     elsif collections.index('FIC')
@@ -368,19 +369,20 @@ def convert_record(record, recno, dryrun, writer)
 
   # These modifiers have to be processed last.
   if prefixes.index('VT')
-    # Vermont items
-    kcoll = 'VT' + kcoll
-    if dewey || (kitem == 'MAP')
-       kloc = 'VT'
+    # Vermont items: only use the VT prefix for adult non-fiction.
+    # FIXME: how about biography?  (dewey || kitem == 'MAP' || kloc == 'BIO')
+    if kcoll == 'A' && !collections.index('FIC')
+      kcall = 'VT ' + kcall
+      kloc = 'VT'
     end
-    kcall = 'VT ' + kcall
+    kcoll = 'VT' + kcoll
   end
   if collections.index('XMAS')
     # Christmas books
     kloc = 'XMAS'
   end
   if prefixes.index('STORAGE')
-    kloc = 'BASE'
+    kloc = 'STO'
   end
   if prefixes.index('REF')
     kitem = 'REF'
