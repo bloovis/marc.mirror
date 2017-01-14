@@ -34,6 +34,9 @@ for record in old_reader
   if record['852']
     barcode = record['852']['p']
     title = record['245']['a']
+    if barcodes[barcode]
+      puts "Multiple holdings for #{barcode}: #{title}, #{barcodes[barcode]}"
+    end
     barcodes[barcode] = title
   end
 end
