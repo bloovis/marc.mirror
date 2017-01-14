@@ -138,21 +138,26 @@ def convert_record(record, recno, dryrun, writer)
     kloc = 'J'
     if collections.index('CD')
       # Kids' CDs
+      kloc = 'JCD'
       kcall = "J CD #{author}"
       kitem = 'CD'
     elsif collections.index('DVD')
+      kloc = 'JDVD'
       kcall = "J DVD #{author}"
       kitem = 'DVD'
     elsif dewey
       # Kids' non-fiction
+      kloc = 'JNFIC'
       kcall = "J #{dewey} #{author}"
       kitem = 'BK'
     elsif collections.index('FIC')
       # Kids' fiction
+      kloc = 'JFIC'
       kcall = "J FIC #{author}"
       kitem = 'BK'
     elsif collections.index('BIO')
       # Kids' biography
+      kloc = 'JBIO'
       kcall = "J BIO #{author}"
       kitem = 'BK'
     elsif collection =~ /CAS/
@@ -269,19 +274,19 @@ def convert_record(record, recno, dryrun, writer)
     elsif collections.index('BABY')
       # Kids' board books
       kcoll = 'J'
-      kloc = 'J'
+      kloc = 'BABY'
       kcall = "BABY #{author}"
       kitem = 'BK'
     elsif collections.index('PIC')
       # Kids' picture books
       kcoll = 'J'
-      kloc = 'J'
+      kloc = 'PIC'
       kcall = "PIC #{author}"
       kitem = 'BK'
     elsif collections.index('EZ')
-      # Kids' picture books
+      # Kids' Easy reader books
       kcoll = 'J'
-      kloc = 'J'
+      kloc = 'EZ'
       kcall = "EZ #{author}"
       kitem = 'BK'
     elsif collections.index('CD')
