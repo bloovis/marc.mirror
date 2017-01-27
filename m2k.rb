@@ -80,12 +80,42 @@ def convert_record(record, recno, dryrun, writer)
     collection = ''
   end
 
-  # Get author.
-  author = record['852']['i']
-  if author
-    author.strip!
+  # Split collection into components.  If one of those components
+  # is numeric, treat it as a Dewey number.
+  collections = collection.split
+  if collection =~ /(\d+[\d.\/]*)/
+    dewey = $1
+    if dryrun
+      puts("Dewey: #{dewey}")
+    end
   else
-    author = ''
+    dewey = nil
+  end
+
+  # Get author.  For fiction and easy readers, we take the longer of either the
+  # Mandarin author (852$i) or the standard MARC author (100$a).
+  mandarin_author = record['852']['i']
+  if mandarin_author
+    mandarin_author.strip!
+  else
+    mandarin_author = ''
+  end
+  marc_author = ''
+  if collections.index('FIC') || collections.index('EZ')
+    if record['100']
+      full_author = record['100']['a']
+      if full_author
+	surname = full_author.split(/\s*[,.\s]\s*/)[0]
+	if surname
+	  marc_author = surname.upcase
+	end
+      end
+    end
+  end
+  if marc_author.length > mandarin_author.length
+    author = marc_author
+  else
+    author = mandarin_author
   end
 
   # Regularize the price.
@@ -112,17 +142,6 @@ def convert_record(record, recno, dryrun, writer)
 
   # Parse prefix.
   prefixes = prefix.split
-
-  # Parse collection.
-  collections = collection.split
-  if collection =~ /(\d+[\d.\/]*)/
-    dewey = $1
-    if dryrun
-      puts("Dewey: #{dewey}")
-    end
-  else
-    dewey = nil
-  end
 
   # Break down the various combinations of prefix(es), collection(s), and author
   # as found in the MARC 852 fields.  From these, determine Koha collection,
