@@ -1,15 +1,14 @@
 #!/usr/bin/env ruby
 
-puts "Version=1.0     Generator=pdf2koc.rb     GeneratorVersion=0.0"
-
 ARGV.each do |filename|
-  File.open(filename) do |f|
+  IO.popen("pdftotext #{filename} -") do |f|
     patron = "MISSING"
     barcode = nil
     borrowed = nil
     due = nil
     date = nil
     dates = []
+    puts "Version=1.0     Generator=pdf2koc.rb     GeneratorVersion=0.0"
     f.each do |line|
       line.chomp!
       case line
