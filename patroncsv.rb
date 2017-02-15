@@ -7,15 +7,19 @@
 #
 # The library branch code is hardcoded in the 'branch' variable below.  Change its
 # value as needed for your library.
+#
+# The "gone no address" value is hardcoded in the 'gone_no_address' variable below.
+# If 1, Koha will alert staff that the patron's address should be verified at checkout.
 
 require 'marc'
 
 branch = 'VSPS'
+gone_no_address = 1
 
 # Convert a Mandarin-generated MARC record to one
 # suitable for importing into Koha.
 
-def convert_record(record, recno, branch)
+def convert_record(record, recno, branch, gone)
   # Extract first and last name.
   if record['100']
     firstname = record['100']['a'] || ''
@@ -40,15 +44,29 @@ def convert_record(record, recno, branch)
   else
     warn("Record #{recno} (#{surname},#{firstname}) missing MARC field 110: using blank address.")
   end
+
+  # Extract barcode
   if record['852']
     cardnumber = record['852']['p'] || ''
   else
     warn("Record #{recno} missing MARC field 852 for barcode: skipping.")
     return
   end
+
+  # Fix some cities.
+  case city
+  when 'ROCHESTER'
+    city = 'Rochester'
+  when 'GRANVILLE'
+    city = 'Granville'
+  when 'HANCOCK'
+    city = 'Hancock'
+  end
+
+  # Output the record in CSV format.
   puts "\"#{surname}\",\"#{firstname}\",\"#{address}\",\"#{city}\",\"#{state}\"," +
        "\"#{zipcode}\",\"#{phone}\",\"#{email}\",\"#{cardnumber}\"," +
-       "#{branch},PT"
+       "#{branch},PT,#{gone}"
 end
 
 # Check arguments. First is input file.
@@ -66,8 +84,8 @@ reader = MARC::Reader.new(input_file,
 
 # Read records, convert to UTF-8 and set Koha fields, write to new file.
 recno = 0
-puts "surname,firstname,address,city,state,zipcode,phone,email,cardnumber,branchcode,categorycode"
+puts "surname,firstname,address,city,state,zipcode,phone,email,cardnumber,branchcode,categorycode,gonenoaddress"
 for record in reader
   recno += 1
-  convert_record(record, recno, branch)
+  convert_record(record, recno, branch, gone_no_address)
 end
