@@ -1,5 +1,9 @@
 #!/usr/bin/env ruby
 
+# This script takes a Mandarin-generated "loan list by patron" PDF report,
+# and outputs an equivalent "KOC" (Koha offline circulation) file
+# for importing into Koha.
+
 ARGV.each do |filename|
   IO.popen("pdftotext #{filename} -") do |f|
     patron = "MISSING"
@@ -8,7 +12,8 @@ ARGV.each do |filename|
     due = nil
     date = nil
     dates = []
-    puts "Version=1.0     Generator=pdf2koc.rb     GeneratorVersion=0.0"
+    ms = 0
+    puts "Version=1.0\tGenerator=pdf2koc.rb\tGeneratorVersion=0.1"
     f.each do |line|
       line.chomp!
       case line
@@ -29,7 +34,8 @@ ARGV.each do |filename|
 	    due = dates.shift
           end
 	  unless due.nil?
-	    puts "#{borrowed} 12:30:00\tissue\t#{patron}\t#{barcode}"
+	    puts "#{borrowed} 12:30:00 #{ms}\tissue\t#{patron}\t#{barcode}"
+            ms += 1
 	    barcode = nil
 	    borrowed = nil
 	  end
@@ -43,10 +49,14 @@ ARGV.each do |filename|
 	  borrowed = date
 	else
 	  due = date
-          puts "#{borrowed} 12:30:00\tissue\t#{patron}\t#{barcode}"
+          puts "#{borrowed} 12:30:00 #{ms}\tissue\t#{patron}\t#{barcode}"
+	  ms += 1
 	  barcode = nil
 	  borrowed = nil
 	end
+      end
+      if ms > 999
+        ms = 0
       end
     end
   end
