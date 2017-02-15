@@ -6,7 +6,7 @@
 
 ARGV.each do |filename|
   IO.popen("pdftotext #{filename} -") do |f|
-    patron = "MISSING"
+    patron = "XXX"
     barcode = nil
     borrowed = nil
     due = nil
