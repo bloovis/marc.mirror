@@ -8,6 +8,16 @@
 
 require 'marc'
 
+# Helper function to construct a call number from
+# the Mandarin prefix, collection, and author.
+
+def get_callno(record)
+   prefix = record['852']['k']
+   collection = record['852']['h']
+   author = record['852']['i']
+   return [prefix, collection, author].join(' ').strip
+end
+
 # Should be three filename arguments
 if ARGV.length < 3
    puts "usage: diff.rb oldMARCfile newMARCfile diffMARCfile"
@@ -34,10 +44,11 @@ for record in old_reader
   if record['852']
     barcode = record['852']['p']
     title = record['245']['a']
+    callno = get_callno(record)
     if barcodes[barcode]
-      puts "Multiple holdings for #{barcode}: #{title}, #{barcodes[barcode]}"
+      puts "Multiple holdings for #{barcode}: #{title}, #{barcodes[barcode][0]}"
     end
-    barcodes[barcode] = title
+    barcodes[barcode] = [title, callno]
   end
 end
 
@@ -45,18 +56,24 @@ new_reader = MARC::Reader.new(new_file,
                              :external_encoding => "UTF-8",
 			     :internal_encoding => "utf-8",
                              :validate_encoding => true)
-puts "--------------"
-puts "Added holdings"
-puts "--------------"
+puts "-----------------------"
+puts "New or changed holdings"
+puts "-----------------------"
 writer = MARC::Writer.new(diff_file)
 for record in new_reader
   if record['852']
     barcode = record['852']['p']
     title = record['245']['a']
+    callno = get_callno(record)
     if barcodes[barcode]
+      oldcallno = barcodes[barcode][1]
+      if callno != oldcallno
+        puts "#{barcode} #{title}: call number changed from #{oldcallno} to #{callno}"
+        writer.write(record)
+      end
       barcodes.delete(barcode)
     else
-      puts "#{barcode} #{title}"
+      puts "#{barcode} #{title}: new holding"
       writer.write(record)
     end
   end
@@ -65,8 +82,10 @@ end
 puts "--------------"
 puts "Deleted holdings"
 puts "----------------"
-barcodes.each do |barcode, title|
-  puts "#{barcode} #{title}"
+barcodes.each do |barcode, info|
+  title = info[0]
+  callno = info[1]
+  puts "#{barcode} #{title} #{callno}"
 end
 
 writer.close()
