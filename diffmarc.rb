@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 
-# This script compares an old MARC catalog with a new catalog, and creates
+# This script compares an old Mandarin MARC catalog with a new catalog, and creates
 # a third MARC file that has all of those records from the new catalog
 # that are not in the old one.  This is useful when trying to keep a forthcoming
 # Koha installation's catalog up-to-date with a soon-to-be-retired
@@ -37,7 +37,7 @@ if File.exist?(diff_file)
 end
 
 old_reader = MARC::Reader.new(old_file,
-                             :external_encoding => "UTF-8",
+                             :external_encoding => "MARC-8",
 			     :internal_encoding => "utf-8",
                              :validate_encoding => true)
 for record in old_reader
@@ -53,7 +53,7 @@ for record in old_reader
 end
 
 new_reader = MARC::Reader.new(new_file,
-                             :external_encoding => "UTF-8",
+                             :external_encoding => "MARC-8",
 			     :internal_encoding => "utf-8",
                              :validate_encoding => true)
 puts "-----------------------"
