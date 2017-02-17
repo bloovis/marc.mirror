@@ -50,28 +50,31 @@ def print_record(record, recno)
   end
 
   # Print out 852 holding fields.
-  if record['852']
-    puts("branch (852-a): '#{record['852']['a']}'")
-    puts("ILL branch (852-b): '#{record['852']['b']}'")
+  holding_count = 0
+  record.each_by_tag('852') do |field|
+    holding_count += 1
+    puts("M3 holding #{holding_count}:")
+    puts("  branch (852-a): '#{field['a']}'")
+    puts("  ILL branch (852-b): '#{field['b']}'")
 
     # Parse prefix.
-    prefix = record['852']['k']
+    prefix = field['k']
     if prefix
       prefix.strip!
     else
       prefix = ''
     end
-    puts("prefix (852-k): '#{prefix}'")
+    puts("  prefix (852-k): '#{prefix}'")
     prefixes = prefix.split
 
     # Parse collection.
-    collection = record['852']['h']
+    collection = field['h']
     if collection
       collection.strip!
     else
       collection = ''
     end
-    puts("collection (852-h): '#{collection}'")
+    puts("  collection (852-h): '#{collection}'")
     case collection
     when /DVD/
       itemtype = 'DVD'
@@ -92,26 +95,26 @@ def print_record(record, recno)
       warn("Title '#{record['245']['a']}' has item type DVD but collection is '#{collection}'")
     end
 
-    author = record['852']['i']
+    author = field['i']
     if author
       author.strip!
     else
       author = ''
     end
-    puts("author (852-i): '#{author}'")
+    puts("  author (852-i): '#{author}'")
 
-    # Regularize the price.
-    puts("price (852-9): '#{record['852']['9']}'")
+    # Print the price.
+    puts("  price (852-9): '#{field['9']}'")
 
-    barcode = record['852']['p']
+    barcode = field['p']
     if barcode
       barcode.strip!
     else
       warn("Title '#{record['245']['a']}' missing barcode")
       barcode = ''
     end
-    puts("barcode (852-p): '#{barcode}'")
-  end
+    puts("  barcode (852-p): '#{barcode}'")
+  end	# of all 852 fields
 
   # Print electronic location.
   if record['856']
@@ -126,29 +129,34 @@ def print_record(record, recno)
     if rec =~ /^(\d\d)(\d\d)(\d\d)/
       year = $1
       if year > '60'
-        year = '19' + year
+	year = '19' + year
       else
-        year = '20' + year
+	year = '20' + year
       end
       date = "#{year}-#{$2}-#{$3}"
       puts("Date (008): #{date}")
     end
   end
 
+
   # Print Koha-specific records.
   if record['942']
     puts("Koha item type (942-c): '#{record['942']['c'] || "undefined"}'")
   end
-  if record['952']
-    puts("Koha home branch (952-a): '#{record['952']['a'] || "undefined"}'")
-    puts("Koha holding branch (952-b): '#{record['952']['b']}'")
-    puts("Koha collection (952-8): '#{record['952']['8'] || "undefined"}'")
-    puts("Koha call number (952-o): '#{record['952']['o']}'")
-    puts("Koha location (952-c): '#{record['952']['c']}'")
-    puts("Koha price (952-v): '#{record['952']['v']}'")
-    puts("Koha barcode (952-p): '#{record['952']['p'] || "undefined"}'")
-    puts("Koha acq. date (952-d): '#{record['952']['d'] || "undefined"}'")
-    puts("Koha item type (952-y): '#{record['952']['y'] || "undefined"}'")
+
+  holding_count = 0
+  record.each_by_tag('952') do |field|
+    holding_count += 1
+    puts("Koha holding #{holding_count}:")
+    puts("  home branch (952-a): '#{field['a'] || "undefined"}'")
+    puts("  holding branch (952-b): '#{field['b']}'")
+    puts("  collection (952-8): '#{field['8'] || "undefined"}'")
+    puts("  call number (952-o): '#{field['o']}'")
+    puts("  location (952-c): '#{field['c']}'")
+    puts("  price (952-v): '#{field['v']}'")
+    puts("  barcode (952-p): '#{field['p'] || "undefined"}'")
+    puts("  acq. date (952-d): '#{field['d'] || "undefined"}'")
+    puts("  item type (952-y): '#{field['y'] || "undefined"}'")
   end
 
 end
