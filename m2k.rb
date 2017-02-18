@@ -13,105 +13,417 @@
 
 require 'marc'
 
-# Remove 942 and 952 fields from a MARC record that might interfere with Koha.
-# It's done by making a new record because
-#   record.fields.delete(field)
-# doesn't seem to work.
+# Take an 852 holding field, and some other Mandarin-specific
+# info in a hash (m), and return a hash (k) containing the equivalent Koha
+# info.  This function contains many library-specific rules that
+# you will probably need to change for your installation.
 
-def cleanup_koha(record)
-  if record['952'] || record['942']
-    new_record = MARC::Record.new
-    record.each do |field|
-      if field.tag != '952' && field.tag != '942'
-	 # puts "Appending field #{field.tag}"
-	 new_record.append(field)
-      else
-	 # puts "Skipping field #{field.tag}"
-      end
-    end
-    return new_record
+def get_holding_info(field, m, dryrun)
+  # Hash of Koha-specific holding info.
+  k = {}
+
+  # Get prefix.
+  prefix = field['k']
+  if prefix
+    prefix.strip!
   else
-    return record
+    prefix = ''
   end
-end
 
-# Remove 852 fields (Mandarin holding records) that aren't needed for Koha.
-
-def cleanup_m3(record)
-  if record['852']
-    new_record = MARC::Record.new
-    record.each do |field|
-      if field.tag != '852'
-	 # puts "Appending field #{field.tag}"
-	 new_record.append(field)
-      else
-	 # puts "Skipping field #{field.tag}"
-      end
-    end
-    return new_record
+  # Get collection.
+  collection = field['h']
+  if collection
+    collection.strip!
   else
-    return record
+    collection = ''
   end
-end
 
-# Convert a Mandarin-generated MARC record to one
-# suitable for importing into Koha.
-
-def convert_record(record, recno, dryrun, writer)
-  # Print out title and author.
-  if record['245']
-    title = record['245']['a']
-    subtitle = record['245']['b']
+  # Split collection into components.  If one of those components
+  # is numeric, treat it as a Dewey number.
+  collections = collection.split
+  if collection =~ /(\d+[\d.\/]*)/
+    dewey = $1
     if dryrun
-      puts("------ Record #{recno} ------")
-      puts("title: '#{title}'")
-      puts("subtitle: '#{subtitle}'")
-      if (record['100'])
-	puts("author (100): '#{record['100']['a']}'")
-      else
-	puts("author (100): UNDEFINED!")
-      end
+      puts("Dewey: #{dewey}")
     end
   else
-    warn("Record #{recno} missing MARC field 245!")
+    dewey = nil
+  end
+
+  # Get author.  For fiction and easy readers, we take the longer of either the
+  # Mandarin author (852$i) or the standard MARC author (100$a).
+  mandarin_author = field['i']
+  if mandarin_author
+    mandarin_author.strip!
+  else
+    mandarin_author = ''
+  end
+  marc_author = ''
+  if collections.index('FIC') || collections.index('EZ')
+    if m[:surname]
+      marc_author = m[:surname].upcase
+    end
+  end
+  if marc_author.length > mandarin_author.length
+    author = marc_author
+  else
+    author = mandarin_author
+  end
+
+  # Regularize the price.
+  k[:price] = field['9'] || ''
+  if k[:price] =~ /(\d+\.?\d+)/
+    k[:price] = $1
+  else
+    k[:price] = ''
+  end
+
+  # Extract the barcode
+  k[:barcode] = field['p']
+
+  # Print the Mandarin info
+  if dryrun
+    puts("branch (852): '#{field['a']}'")
+    puts("ILL branch (852): '#{field['b']}'")
+    puts("prefix (852): '#{prefix}'")
+    puts("collection (852): '#{collection}'")
+    puts("author (852): '#{author}'")
+    puts("price (852): '#{k[:price]}'")
+    puts("barcode (852): '#{k[:barcode]}'")
+  end
+
+  # Parse prefix.
+  prefixes = prefix.split
+
+  # Break down the various combinations of prefix(es), collection(s), and author
+  # as found in the MARC 852 field.  From these, determine Koha collection,
+  # location, call number, and item type.
+  k[:coll] = 'UNDEFINED'
+  k[:loc]  = 'UNDEFINED'
+  k[:call] = 'UNDEFINED'
+  k[:item] = 'UNDEFINED'
+
+  if prefixes.index('J')
+    # Kids' items
+    k[:coll] = 'J'
+    k[:loc] = 'J'
+    if collections.index('CD')
+      # Kids' CDs
+      k[:loc] = 'JCD'
+      k[:call] = "J CD #{author}"
+      k[:item] = 'CD'
+    elsif collections.index('DVD')
+      k[:loc] = 'JDVD'
+      k[:call] = "J DVD #{author}"
+      k[:item] = 'DVD'
+    elsif dewey
+      # Kids' non-fiction
+      k[:loc] = 'JNFIC'
+      k[:call] = "J #{dewey} #{author}"
+      k[:item] = 'BK'
+    elsif collections.index('FIC')
+      # Kids' fiction
+      k[:loc] = 'JFIC'
+      k[:call] = "J FIC #{author}"
+      k[:item] = 'BK'
+    elsif collections.index('BIO')
+      # Kids' biography
+      k[:loc] = 'JBIO'
+      k[:call] = "J BIO #{author}"
+      k[:item] = 'BK'
+    elsif collection =~ /CAS/
+      # Kids' cassettes
+      k[:call] = "J CAS #{author}"
+      k[:item] = 'CAS'
+    elsif collections.index('VID')
+      # Kids' video cassettes
+      k[:loc] = 'CD'
+      k[:call] = "J VID #{author}"
+      k[:item] = 'VC'
+    elsif collections.index('SPANISH')
+      # Kids' Spanish books
+      k[:call] = "J SPANISH #{author}"
+      k[:item] = 'BK'
+    end
+  elsif prefixes.index('YA')
+    # YA items
+    k[:coll] = 'YA'
+    if dewey
+      if dewey =~ /741\.5/
+	# YA graphic novel
+	k[:loc] = 'YA'
+	k[:call] = "YA #{dewey} #{author}"
+      else
+	# Other YA non-fiction is stored with adult non-fiction,
+	# but we keep the YA prefix on the call number.
+	k[:loc] = 'NFIC'
+	k[:call] = "YA #{dewey} #{author}"
+      end
+      k[:item] = 'BK'
+    elsif collections.index('FIC')
+      # YA fiction
+      k[:loc] = 'YA'
+      k[:call] = "YA FIC #{author}"
+      k[:item] = 'BK'
+    elsif collections.index('DVD')
+      # YA DVD, fiction or non-fiction
+      k[:loc] = 'DVD'
+      k[:call] = "DVD #{author}"
+      k[:item] = 'DVD'
+    elsif collections.index('BIO')
+      # YA biography
+      k[:loc] = 'BIO'
+      k[:call] = "BIO #{author}"
+      k[:item] = 'BK'
+    elsif collections.index('CD')
+      # YA audiobooks
+      k[:loc] = 'CD'
+      k[:call] = "CD #{author}"
+      k[:item] = 'CD'
+    elsif collections.index('PBK')
+      # YA paperback
+      k[:loc] = 'PBK'
+      k[:call] = "PBK #{author}"
+      k[:item] = 'BK'
+    end
+  else
+    # Adult items (and some kids' items that have no prefix)
+    if dewey
+      # Adult non-fiction
+      k[:coll] = 'A'
+      k[:loc] = 'NFIC'
+      k[:call] = "#{dewey} #{author}"
+      k[:item] = 'BK'
+    elsif collections.index('FIC')
+      # Adult fiction
+      if author > 'COBEN'
+	# Downstairs
+	k[:loc] = 'FICD'
+      else
+	# Upstairs
+	k[:loc] = 'FICU'
+      end
+      k[:coll] = 'A'
+      k[:call] = "FIC #{author}"
+      k[:item] = 'BK'
+    elsif collections.index('DVD')
+      # Adult DVD, fiction or non-fiction
+      k[:coll] = 'A'
+      k[:loc] = 'DVD'
+      k[:call] = "DVD #{author}"
+      k[:item] = 'DVD'
+    elsif collections.index('BIO') || collections.index('Bio')
+      # Adult biography
+      k[:coll] = 'A'
+      k[:loc] = 'BIO'
+      k[:call] = "BIO #{author}"
+      k[:item] = 'BK'
+    elsif collection =~ /CAS/
+      # Adult cassette
+      k[:coll] = 'A'
+      k[:loc] = 'CD'
+      k[:call] = "CAS #{author}"
+      k[:item] = 'CAS'
+    elsif collection =~ /VID/
+      # Adult video cassette
+      k[:coll] = 'A'
+      k[:loc] = 'CD'
+      k[:call] = "VID #{author}"
+      k[:item] = 'VC'
+    elsif collection =~ /pass/i
+      # Park/museum pass
+      k[:coll] = 'A'
+      k[:loc] = 'STAFF'
+      k[:call] = 'ASK AT DESK'
+      k[:item] = 'PASS'
+    elsif collections.index('PBK')
+      # Adult paperback
+      k[:coll] = 'A'
+      k[:loc] = 'PBK'
+      k[:call] = "PBK #{author}"
+      k[:item] = 'BK'
+    elsif collections.index('BABY')
+      # Kids' board books
+      k[:coll] = 'J'
+      k[:loc] = 'BABY'
+      k[:call] = "BABY #{author}"
+      k[:item] = 'BK'
+    elsif collections.index('PIC')
+      # Kids' picture books
+      k[:coll] = 'J'
+      k[:loc] = 'PIC'
+      k[:call] = "PIC #{author}"
+      k[:item] = 'BK'
+    elsif collections.index('EZ')
+      # Kids' Easy reader books
+      k[:coll] = 'J'
+      k[:loc] = 'EZ'
+      k[:call] = "EZ #{author}"
+      k[:item] = 'BK'
+    elsif collections.index('CD')
+      # Adult CDs
+      k[:coll] = 'A'
+      k[:loc] = 'CD'
+      k[:call] = "CD #{author}"
+      k[:item] = 'CD'
+    elsif collection =~ /MUS/
+      # Adult music CDs
+      k[:coll] = 'A'
+      k[:loc] = 'CD'
+      k[:call] = "MUS #{author}"
+      k[:item] = 'MU'
+    end
+  end
+
+  # Now handle special cases in collections or prefix
+  if collections.index('LPE')
+    # Large print editions
+    k[:coll] = 'A'
+    k[:loc] = 'LP'
+    if k[:call] == 'UNDEFINED'
+      k[:call] = 'LPE ' + author
+    else
+      k[:call] = 'LPE ' + k[:call]
+    end
+    k[:item] = 'BK'
+  end
+  if collections.index('COMPUTERS') || collections.index('Computer')
+    # Computers
+    k[:coll] = 'A'
+    k[:loc] = 'STAFF'
+    k[:call] = 'ASK AT DESK'
+    k[:item] = 'PC'
+  end
+  if collections.index('KINDLE')
+    # Kindle
+    k[:coll] = 'A'
+    k[:loc] = 'STAFF'
+    k[:call] = 'ASK AT DESK'
+    k[:item] = 'ER'
+  end
+  if collection =~ /key/i
+    # Keys
+    k[:coll] = 'A'
+    k[:loc] = 'STAFF'
+    k[:call] = 'ASK AT DESK'
+    k[:item] = 'KEY'
+  end
+  if collection =~ /mag/i
+    # Magazines
+    k[:coll] = 'A'
+    k[:loc] = 'STAFF'
+    k[:call] = 'ASK AT DESK'
+    k[:item] = 'MAG'
+  end
+  if collection =~ /town|school/i
+    # Town/school reports
+    k[:coll] = 'A'
+    k[:loc] = 'VT'
+    k[:call] = prefix + 'TOWN ' + author
+    k[:item] = 'BK'
+  end
+  if collection =~ /map/i
+    # Maps
+    k[:coll] = 'A'
+    k[:item] = 'MAP'
+    k[:call] = 'MAP ' + author
+  end
+  if collection =~ /BP/
+    # Blood pressure monitor
+    k[:coll] = 'A'
+    k[:loc] = 'STAFF'
+    k[:call] = 'ASK AT DESK'
+    k[:item] = 'MX'
+  end
+  if collection =~ /CARD/
+    # Credit cards
+    k[:coll] = 'A'
+    k[:loc] = 'STAFF'
+    k[:call] = 'ASK AT DESK'
+    k[:item] = 'CARD'
+  end
+
+  # These modifiers have to be processed last.
+  if prefixes.index('VT')
+    # Vermont items: only use the VT prefix for adult non-fiction.
+    # FIXME: how about biography?  (dewey || k[:item] == 'MAP' || k[:loc] == 'BIO')
+    if k[:coll] == 'A' && !collections.index('FIC')
+      k[:call] = 'VT ' + k[:call]
+      k[:loc] = 'VT'
+    end
+    k[:coll] = 'VT' + k[:coll]
+  end
+  if collections.index('XMAS')
+    # Christmas books
+    k[:loc] = 'XMAS'
+  end
+  if prefixes.index('STORAGE')
+    k[:loc] = 'STO'
+  end
+  if prefixes.index('REF')
+    k[:item] = 'REF'
+  end
+
+  # Print derived Koha attributes.
+  k[:coll].strip!
+  k[:loc].strip!
+  k[:call].strip!
+
+  if dryrun
+    puts("Koha coll: #{k[:coll]}")
+    puts("Koha loc:  #{k[:loc]}")
+    puts("Koha call: #{k[:call]}")
+    puts("Koha item: #{k[:item]}")
+  end
+  if k[:coll] + k[:loc] + k[:item] =~ /UNDEFINED/
+    warn("Record #{recno} (#{m[:title]},#{prefix},#{collection},#{author}) has an undefined Koha collection or location or item type!")
     return
   end
 
-  # Get author surname.
-  surname = nil
-  if record['100']
-    full_author = record['100']['a']
-    if full_author
-      surname = full_author.split(/\s*[,.\s]\s*/)[0]
+  # Make sure that sound recordings and movies have the correct item type.
+  if m[:media]
+    expected_kitem = /#{k[:item]}/
+    case m[:media]
+    when /dvd|video|filmmaterial/i
+      expected_kitem = /DVD|VC/
+    when /cd|compact|book on cd|sound recording|mp3 talking/i
+      expected_kitem = /CD/
+    when /music/i
+      expected_kitem = /MU/
+    when /kit/i
+      expected_kitem = /MX/
+    end
+    if k[:item] !~ expected_kitem
+      warn("Record #{m[:recno]} (#{m[:title]},#{prefix},#{collection},#{author},#{k[:barcode]}) has media type #{m[:media]} but item type is #{k[:item]}, expected #{expected_kitem.source}!")
     end
   end
 
-  # Get the media type.
-  media = nil
-  if record['245'] && record['245']['h']
-    media = record['245']['h']
+  # Return hash of info extracted or deduced from the 852 field.
+  return k
+end
+
+# Convert a Mandarin-generated MARC record to one
+# suitable for importing into Koha.  Most fields
+# are copied verbatim, some are ignored, and the
+# 852 fields are converted.
+
+def convert_record(mandarin_record, recno, dryrun, writer)
+  if dryrun
+    puts("------ Record #{recno} ------")
   end
 
-  # Convert holding acquisition date from YYMMDD to YYYY-MM-DD.
-  holding_date = ''
-  if record['008']
-    rec = record['008'].value
-    if rec =~ /^(\d\d)(\d\d)(\d\d)/
-      year = $1
-      if year > '60'
-	year = '19' + year
-      else
-	year = '20' + year
-      end
-      holding_date = "#{year}-#{$2}-#{$3}"
-    end
-  end
+  # Create an output record, which will contain the non-Koha
+  # fields from the Mandarin record, plus our new Koha-specific
+  # fields.
+  record = MARC::Record.new
 
-  # Convert bib entry date from YYMMDD to YYYY-MM-DD.
+  # Convert bib entry date from YYMMDD to YYYY-MM-DD.  We have to handle
+  # this before iterating through the fields, because 908 appears
+  # after the holding fields (852).
   bib_date = ''
-  if record['908']
-    if rec = record['908']['a']
-      if rec =~ /^(\d\d)(\d\d)(\d\d)/
+  if mandarin_record['908']
+    if date = mandarin_record['908']['a']
+      if date =~ /^(\d\d)(\d\d)(\d\d)/
 	year = $1
 	if year > '60'
 	  year = '19' + year
@@ -123,423 +435,100 @@ def convert_record(record, recno, dryrun, writer)
     end
   end
 
-  # Use the later of the two dates as the acquisition date.
-  date = [bib_date, holding_date].max
+  # A hash of information that will get initialized properly as
+  # we parse the fields from the Mandarin record.
+  m = {}
+  m[:title] = nil
+  m[:surname] = nil
+  m[:media] = nil
+  m[:date] = ''
+  m[:recno] = recno
 
-  # Convert 852 holding fields.
+  # For each field in the old record, copy it, ignore it,
+  # or (in the case of a holding record) convert it.
   holding_count = 0
-  record.each_by_tag('852') do |field|
-    holding_count += 1
-    # Get prefix.
-    prefix = field['k']
-    if prefix
-      prefix.strip!
-    else
-      prefix = ''
-    end
+  mandarin_record.each do |field|
+    case field.tag
+    when '008'
+      # Convert holding acquisition date from YYMMDD to YYYY-MM-DD.
+      holding_date = ''
+      date = field.value
+      if date =~ /^(\d\d)(\d\d)(\d\d)/
+	year = $1
+	if year > '60'
+	  year = '19' + year
+	else
+	  year = '20' + year
+	end
+	holding_date = "#{year}-#{$2}-#{$3}"
+      end
 
-    # Get collection.
-    collection = field['h']
-    if collection
-      collection.strip!
-    else
-      collection = ''
-    end
+      # Use the later of the two dates as the Koha acquisition date.
+      m[:date] = [bib_date, holding_date].max
 
-    # Split collection into components.  If one of those components
-    # is numeric, treat it as a Dewey number.
-    collections = collection.split
-    if collection =~ /(\d+[\d.\/]*)/
-      dewey = $1
+      unless dryrun
+        record.append(field)
+      end
+    when '100'
+      # Get author info.
+      full_author = field['a']
+      if full_author
+	m[:surname] = full_author.split(/\s*[,.\s]\s*/)[0]
+      end
       if dryrun
-	puts("Dewey: #{dewey}")
-      end
-    else
-      dewey = nil
-    end
-
-    # Get author.  For fiction and easy readers, we take the longer of either the
-    # Mandarin author (852$i) or the standard MARC author (100$a).
-    mandarin_author = field['i']
-    if mandarin_author
-      mandarin_author.strip!
-    else
-      mandarin_author = ''
-    end
-    marc_author = ''
-    if collections.index('FIC') || collections.index('EZ')
-      if surname
-	marc_author = surname.upcase
-      end
-    end
-    if marc_author.length > mandarin_author.length
-      author = marc_author
-    else
-      author = mandarin_author
-    end
-
-    # Regularize the price.
-    price = field['9'] || ''
-    if price =~ /(\d+\.?\d+)/
-      price = $1
-    else
-      price = ''
-    end
-
-    # Extract the barcode
-    barcode = field['p']
-
-    # Print the Mandarin info
-    if dryrun
-      puts("branch (852): '#{field['a']}'")
-      puts("ILL branch (852): '#{field['b']}'")
-      puts("prefix (852): '#{prefix}'")
-      puts("collection (852): '#{collection}'")
-      puts("author (852): '#{author}'")
-      puts("price (852): '#{price}'")
-      puts("barcode (852): '#{barcode}'")
-    end
-
-    # Parse prefix.
-    prefixes = prefix.split
-
-    # Break down the various combinations of prefix(es), collection(s), and author
-    # as found in the MARC 852 fields.  From these, determine Koha collection,
-    # location, call number, and item type.
-    kcoll = 'UNDEFINED'
-    kloc  = 'UNDEFINED'
-    kcall = 'UNDEFINED'
-    kitem = 'UNDEFINED'
-
-    if prefixes.index('J')
-      # Kids' items
-      kcoll = 'J'
-      kloc = 'J'
-      if collections.index('CD')
-	# Kids' CDs
-	kloc = 'JCD'
-	kcall = "J CD #{author}"
-	kitem = 'CD'
-      elsif collections.index('DVD')
-	kloc = 'JDVD'
-	kcall = "J DVD #{author}"
-	kitem = 'DVD'
-      elsif dewey
-	# Kids' non-fiction
-	kloc = 'JNFIC'
-	kcall = "J #{dewey} #{author}"
-	kitem = 'BK'
-      elsif collections.index('FIC')
-	# Kids' fiction
-	kloc = 'JFIC'
-	kcall = "J FIC #{author}"
-	kitem = 'BK'
-      elsif collections.index('BIO')
-	# Kids' biography
-	kloc = 'JBIO'
-	kcall = "J BIO #{author}"
-	kitem = 'BK'
-      elsif collection =~ /CAS/
-	# Kids' cassettes
-	kcall = "J CAS #{author}"
-	kitem = 'CAS'
-      elsif collections.index('VID')
-	# Kids' video cassettes
-	kloc = 'CD'
-	kcall = "J VID #{author}"
-	kitem = 'VC'
-      elsif collections.index('SPANISH')
-	# Kids' Spanish books
-	kcall = "J SPANISH #{author}"
-	kitem = 'BK'
-      end
-    elsif prefixes.index('YA')
-      # YA items
-      kcoll = 'YA'
-      if dewey
-	if dewey =~ /741\.5/
-	  # YA graphic novel
-	  kloc = 'YA'
-	  kcall = "YA #{dewey} #{author}"
-	else
-	  # Other YA non-fiction is stored with adult non-fiction,
-	  # but we keep the YA prefix on the call number.
-	  kloc = 'NFIC'
-	  kcall = "YA #{dewey} #{author}"
-	end
-	kitem = 'BK'
-      elsif collections.index('FIC')
-	# YA fiction
-	kloc = 'YA'
-	kcall = "YA FIC #{author}"
-	kitem = 'BK'
-      elsif collections.index('DVD')
-	# YA DVD, fiction or non-fiction
-	kloc = 'DVD'
-	kcall = "DVD #{author}"
-	kitem = 'DVD'
-      elsif collections.index('BIO')
-	# YA biography
-	kloc = 'BIO'
-	kcall = "BIO #{author}"
-	kitem = 'BK'
-      elsif collections.index('CD')
-	# YA audiobooks
-	kloc = 'CD'
-	kcall = "CD #{author}"
-	kitem = 'CD'
-      elsif collections.index('PBK')
-	# YA paperback
-	kloc = 'PBK'
-	kcall = "PBK #{author}"
-	kitem = 'BK'
-      end
-    else
-      # Adult items (and some kids' items that have no prefix)
-      if dewey
-	# Adult non-fiction
-	kcoll = 'A'
-	kloc = 'NFIC'
-	kcall = "#{dewey} #{author}"
-	kitem = 'BK'
-      elsif collections.index('FIC')
-	# Adult fiction
-	if author > 'COBEN'
-	  # Downstairs
-	  kloc = 'FICD'
-	else
-	  # Upstairs
-	  kloc = 'FICU'
-	end
-	kcoll = 'A'
-	kcall = "FIC #{author}"
-	kitem = 'BK'
-      elsif collections.index('DVD')
-	# Adult DVD, fiction or non-fiction
-	kcoll = 'A'
-	kloc = 'DVD'
-	kcall = "DVD #{author}"
-	kitem = 'DVD'
-      elsif collections.index('BIO') || collections.index('Bio')
-	# Adult biography
-	kcoll = 'A'
-	kloc = 'BIO'
-	kcall = "BIO #{author}"
-	kitem = 'BK'
-      elsif collection =~ /CAS/
-	# Adult cassette
-	kcoll = 'A'
-	kloc = 'CD'
-	kcall = "CAS #{author}"
-	kitem = 'CAS'
-      elsif collection =~ /VID/
-	# Adult video cassette
-	kcoll = 'A'
-	kloc = 'CD'
-	kcall = "VID #{author}"
-	kitem = 'VC'
-      elsif collection =~ /pass/i
-	# Park/museum pass
-	kcoll = 'A'
-	kloc = 'STAFF'
-	kcall = 'ASK AT DESK'
-	kitem = 'PASS'
-      elsif collections.index('PBK')
-	# Adult paperback
-	kcoll = 'A'
-	kloc = 'PBK'
-	kcall = "PBK #{author}"
-	kitem = 'BK'
-      elsif collections.index('BABY')
-	# Kids' board books
-	kcoll = 'J'
-	kloc = 'BABY'
-	kcall = "BABY #{author}"
-	kitem = 'BK'
-      elsif collections.index('PIC')
-	# Kids' picture books
-	kcoll = 'J'
-	kloc = 'PIC'
-	kcall = "PIC #{author}"
-	kitem = 'BK'
-      elsif collections.index('EZ')
-	# Kids' Easy reader books
-	kcoll = 'J'
-	kloc = 'EZ'
-	kcall = "EZ #{author}"
-	kitem = 'BK'
-      elsif collections.index('CD')
-	# Adult CDs
-	kcoll = 'A'
-	kloc = 'CD'
-	kcall = "CD #{author}"
-	kitem = 'CD'
-      elsif collection =~ /MUS/
-	# Adult music CDs
-	kcoll = 'A'
-	kloc = 'CD'
-	kcall = "MUS #{author}"
-	kitem = 'MU'
-      end
-    end
-
-    # Now handle special cases in collections or prefix
-    if collections.index('LPE')
-      # Large print editions
-      kcoll = 'A'
-      kloc = 'LP'
-      if kcall == 'UNDEFINED'
-	kcall = 'LPE ' + author
+	puts("author (100): '#{full_author}")
       else
-	kcall = 'LPE ' + kcall
+        record.append(field)
       end
-      kitem = 'BK'
-    end
-    if collections.index('COMPUTERS') || collections.index('Computer')
-      # Computers
-      kcoll = 'A'
-      kloc = 'STAFF'
-      kcall = 'ASK AT DESK'
-      kitem = 'PC'
-    end
-    if collections.index('KINDLE')
-      # Kindle
-      kcoll = 'A'
-      kloc = 'STAFF'
-      kcall = 'ASK AT DESK'
-      kitem = 'ER'
-    end
-    if collection =~ /key/i
-      # Keys
-      kcoll = 'A'
-      kloc = 'STAFF'
-      kcall = 'ASK AT DESK'
-      kitem = 'KEY'
-    end
-    if collection =~ /mag/i
-      # Magazines
-      kcoll = 'A'
-      kloc = 'STAFF'
-      kcall = 'ASK AT DESK'
-      kitem = 'MAG'
-    end
-    if collection =~ /town|school/i
-      # Town/school reports
-      kcoll = 'A'
-      kloc = 'VT'
-      kcall = prefix + 'TOWN ' + author
-      kitem = 'BK'
-    end
-    if collection =~ /map/i
-      # Maps
-      kcoll = 'A'
-      kitem = 'MAP'
-      kcall = 'MAP ' + author
-    end
-    if collection =~ /BP/
-      # Blood pressure monitor
-      kcoll = 'A'
-      kloc = 'STAFF'
-      kcall = 'ASK AT DESK'
-      kitem = 'MX'
-    end
-    if collection =~ /CARD/
-      # Credit cards
-      kcoll = 'A'
-      kloc = 'STAFF'
-      kcall = 'ASK AT DESK'
-      kitem = 'CARD'
-    end
-
-    # These modifiers have to be processed last.
-    if prefixes.index('VT')
-      # Vermont items: only use the VT prefix for adult non-fiction.
-      # FIXME: how about biography?  (dewey || kitem == 'MAP' || kloc == 'BIO')
-      if kcoll == 'A' && !collections.index('FIC')
-	kcall = 'VT ' + kcall
-	kloc = 'VT'
+    when '245'
+      # Get the title and media type.
+      m[:title] = field['a']
+      if field['h']
+	m[:media] = field['h']
       end
-      kcoll = 'VT' + kcoll
-    end
-    if collections.index('XMAS')
-      # Christmas books
-      kloc = 'XMAS'
-    end
-    if prefixes.index('STORAGE')
-      kloc = 'STO'
-    end
-    if prefixes.index('REF')
-      kitem = 'REF'
-    end
-
-    # Print derived Koha attributes.
-    kcoll.strip!
-    kloc.strip!
-    kcall.strip!
-
-    if dryrun
-      puts("Koha coll: #{kcoll}")
-      puts("Koha loc:  #{kloc}")
-      puts("Koha call: #{kcall}")
-      puts("Koha item: #{kitem}")
-    end
-    if kcoll + kloc + kitem =~ /UNDEFINED/
-      warn("Record #{recno} (#{title},#{prefix},#{collection},#{author}) has an undefined Koha collection or location or item type!")
-      return
-    end
-
-    # Make sure that sound recordings and movies have the correct item type.
-    if media
-      expected_kitem = /#{kitem}/
-      case media
-      when /dvd|video|filmmaterial/i
-	expected_kitem = /DVD|VC/
-      when /cd|compact|book on cd|sound recording|mp3 talking/i
-	expected_kitem = /CD/
-      when /music/i
-	expected_kitem = /MU/
-      when /kit/i
-	expected_kitem = /MX/
+      if dryrun
+	puts("title: '#{m[:title]}', media type: #{m[:media]}")
+      else
+        record.append(field)
       end
-      if kitem !~ expected_kitem
-	warn("Record #{recno} (#{title},#{prefix},#{collection},#{author},#{barcode}) has media type #{media} but item type is #{kitem}, expected #{expected_kitem.source}!")
-      end
-    end
+    when '852'
+      k = get_holding_info(field, m, dryrun)
 
-    # Append 942 and 952 records required by Koha.
-    unless dryrun
-      if holding_count == 1
-        # Remove fields that might interfere with Koha.
-        record = cleanup_koha(record)
+      # Append 942 and 952 fields required by Koha.
+      holding_count += 1
+      unless dryrun
+	if holding_count == 1
+	  # Add only one bib record item type.
+	  record.append(MARC::DataField.new(
+	    '942', ' ',  ' ',
+	    ['c', k[:item]]))
+	end
 
-        # Add only one bib record item type.
+	# Add this holding record.
 	record.append(MARC::DataField.new(
-	  '942', ' ',  ' ',
-	  ['c', kitem]))
+	  '952', ' ',  ' ',
+	  ['8', k[:coll]],
+	  ['a', 'VSPS'],
+	  ['b', 'VSPS'],
+	  ['c', k[:loc]],
+	  ['d', m[:date]],
+	  ['o', k[:call]],
+	  ['p', k[:barcode]],
+	  ['v', k[:price]],
+	  ['y', k[:item]]))
       end
-
-      # Add this holding record.
-      record.append(MARC::DataField.new(
-	'952', ' ',  ' ',
-	['8', kcoll],
-	['a', 'VSPS'],
-	['b', 'VSPS'],
-	['c', kloc],
-	['d', date],
-	['o', kcall],
-	['p', barcode],
-	['v', price],
-	['y', kitem]))
-    end
-
-  end	# of all 852 holding records
+    else
+      # Ignore Mandarin-specific fields.
+      unless dryrun || ['852', '908', '942', '952'].index(field.tag)
+        record.append(field)
+      end
+    end	# cases
+  end # each field
 
   # Write out the converted record.
   unless dryrun
-    record = cleanup_m3(record)
     writer.write(record)
   end
-
 end
 
 # Check arguments. First is input file.  Second is output file.
