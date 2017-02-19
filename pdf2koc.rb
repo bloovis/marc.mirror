@@ -3,10 +3,14 @@
 # This script takes a Mandarin-generated "loan list by patron" PDF report,
 # and outputs an equivalent "KOC" (Koha offline circulation) file
 # for importing into Koha.
+#
+# The regular expressions for matching patron and item barcodes are
+# highly dependent on a particular library's conventions.  You
+# will need to changes this for your situation.
 
 ARGV.each do |filename|
   IO.popen("pdftotext #{filename} -") do |f|
-    patron = "XXX"
+    patron = nil
     barcode = nil
     borrowed = nil
     due = nil
@@ -17,9 +21,11 @@ ARGV.each do |filename|
     f.each do |line|
       line.chomp!
       case line
-      when /^([A-Z]\d\d\d\d)/
+      when /^([A-Z]\d\d\d\d|ILL66666)/
 	patron = $1
 	#puts "patron: #{patron}"
+      when /^MISSING/
+        patron = 'XXX'
       when /(RPL\d\d\d\d\d)/
 	barcode = $1
 	#puts "barcode: #{barcode}"
