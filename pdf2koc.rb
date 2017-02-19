@@ -6,7 +6,7 @@
 #
 # The regular expressions for matching patron and item barcodes are
 # highly dependent on a particular library's conventions.  You
-# will need to changes this for your situation.
+# will need to changes these for your situation.
 
 ARGV.each do |filename|
   IO.popen("pdftotext #{filename} -") do |f|
