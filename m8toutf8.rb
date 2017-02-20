@@ -52,11 +52,11 @@ reader = MARC::Reader.new(input_file,
 writer = MARC::Writer.new(output_file)
 
 # Read records, convert to UTF-8, write to new file.
-print_rec = 19719
+print_rec = 0
 recno = 0
 for record in reader
   recno += 1
-  if (recno == print_rec)
+  if recno == print_rec
     print_record(record, recno)
   end
   writer.write(record)
