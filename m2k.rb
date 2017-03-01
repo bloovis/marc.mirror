@@ -417,6 +417,10 @@ def convert_record(mandarin_record, recno, dryrun, writer)
   # fields.
   record = MARC::Record.new
 
+  # Copy the leader, which contains important information about
+  # material type.
+  record.leader = mandarin_record.leader
+
   # Convert bib entry date from YYMMDD to YYYY-MM-DD.  We have to handle
   # this before iterating through the fields, because 908 appears
   # after the holding fields (852).
