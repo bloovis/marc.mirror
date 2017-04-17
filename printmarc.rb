@@ -13,6 +13,11 @@ def print_record(record, recno)
     puts("author: UNDEFINED!")
   end
 
+  # Print out ISBN.
+  if record['020']
+    puts("ISBN (020-a): '#{record['020']['a']}'")
+  end
+
   # Print out 082 call number fields
   if record['082']
     puts("classification number (082-a): '#{record['082']['a']}'")
@@ -161,6 +166,24 @@ def print_record(record, recno)
 
 end
 
+if ARGV.length < 1
+   puts "usage: printmarc.rb [-m] marcfile..."
+   puts "-m : use MARC-8 encoding on marcfile instead of utf-8"
+   exit 1
+end
+
+encoding = 'utf-8'
+nopts = 0
+ARGV.each do |arg|
+  if arg == '-m'
+    encoding = 'MARC-8'
+    nopts += 1
+  else
+    break
+  end
+end
+ARGV.shift(nopts)
+
 # reading records from a batch file
 firstrec = 1
 ARGV.each do |filename|
@@ -176,9 +199,7 @@ ARGV.each do |filename|
     #   end
 
   reader = MARC::Reader.new(filename,
-                            #:external_encoding => "cp866",
-                            :external_encoding => "UTF-8",
-                            #:external_encoding => "MARC-8",
+                            :external_encoding => encoding,
 			    :internal_encoding => "utf-8",
 			    #:invalid => :replace, :replace => "???")
                             :validate_encoding => true)
