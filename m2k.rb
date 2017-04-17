@@ -22,13 +22,14 @@ def get_holding_info(field, m, dryrun)
   # Hash of Koha-specific holding info.
   k = {}
 
-  # Get prefix.
+  # Get prefix and split it into components.
   prefix = field['k']
   if prefix
     prefix.strip!
   else
     prefix = ''
   end
+  prefixes = prefix.split
 
   # Get collection.
   collection = field['h']
@@ -92,9 +93,6 @@ def get_holding_info(field, m, dryrun)
     puts("barcode (852): '#{k[:barcode]}'")
   end
 
-  # Parse prefix.
-  prefixes = prefix.split
-
   # Break down the various combinations of prefix(es), collection(s), and author
   # as found in the MARC 852 field.  From these, determine Koha collection,
   # location, call number, and item type.
@@ -151,7 +149,7 @@ def get_holding_info(field, m, dryrun)
     if dewey
       if dewey =~ /741\.5/
 	# YA graphic novel
-	k[:loc] = 'YA'
+	k[:loc] = 'YAGN'
 	k[:call] = "YA #{dewey} #{author}"
       else
 	# Other YA non-fiction is stored with adult non-fiction,
@@ -587,6 +585,7 @@ recno = 0
 for record in reader
   recno += 1
   convert_record(record, recno, dryrun, writer)
+  #puts "processed record #{recno}"
 end
 puts("#{recno} records handled\n")
 unless dryrun
