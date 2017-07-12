@@ -5,8 +5,10 @@ require 'marc'
 def print_record(record, recno)
   # Print out title and author.
   puts("------ Record #{recno} ------")
-  puts("title: '#{record['245']['a']}'")
-  puts("subtitle: '#{record['245']['b']}'")
+  if record['245']
+    puts("title: '#{record['245']['a']}'")
+    puts("subtitle: '#{record['245']['b']}'")
+  end
   if (record['100'])
     puts("author: '#{record['100']['a']}'")
   else
@@ -107,6 +109,7 @@ def print_record(record, recno)
       author = ''
     end
     puts("  author (852-i): '#{author}'")
+    puts("  Mandarin call number: " + "#{prefix} #{collection} #{author}".strip)
 
     # Print the price.
     puts("  price (852-9): '#{field['9']}'")
