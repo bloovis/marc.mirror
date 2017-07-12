@@ -160,7 +160,7 @@ def get_holding_info(field, m, dryrun)
       k[:item] = 'BK'
     elsif collections.index('FIC')
       # YA fiction
-      k[:loc] = 'YA'
+      k[:loc] = 'YAFIC'
       k[:call] = "YA FIC #{author}"
       k[:item] = 'BK'
     elsif collections.index('DVD')
