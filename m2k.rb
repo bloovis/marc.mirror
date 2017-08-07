@@ -12,15 +12,25 @@
 # are based on a particular library's requirements and quirks.
 
 require 'marc'
+require 'date'
 
 # Take an 852 holding field, and some other Mandarin-specific
 # info in a hash (m), and return a hash (k) containing the equivalent Koha
 # info.  This function contains many library-specific rules that
 # you will probably need to change for your installation.
 
-def get_holding_info(field, m, dryrun)
+def get_holding_info(field, m, dryrun, recno)
   # Hash of Koha-specific holding info.
   k = {}
+
+  # Calculate age of item in days.  If less than 180 days,
+  # it's a new book.
+  begin
+    new_book = (DateTime.now - Date.parse(m[:date])).to_i < 180
+  rescue
+    puts "Invalid date '#{m[:date]}' in record #{recno} (#{m[:title]}): assuming not a new book"
+    new_book = false
+  end
 
   # Get prefix and split it into components.
   prefix = field['k']
@@ -189,21 +199,31 @@ def get_holding_info(field, m, dryrun)
     if dewey
       # Adult non-fiction
       k[:coll] = 'A'
-      k[:loc] = 'NFIC'
       k[:call] = "#{dewey} #{author}"
-      k[:item] = 'BK'
+      if new_book
+	k[:loc] = 'NEWNFIC'
+	k[:item] = 'NEW'
+      else
+        k[:loc] = 'NFIC'
+        k[:item] = 'BK'
+      end
     elsif collections.index('FIC')
       # Adult fiction
-      if author > 'COBEN'
-	# Downstairs
-	k[:loc] = 'FICD'
-      else
-	# Upstairs
-	k[:loc] = 'FICU'
-      end
       k[:coll] = 'A'
       k[:call] = "FIC #{author}"
-      k[:item] = 'BK'
+      if new_book
+	k[:loc] = 'NEWFIC'
+	k[:item] = 'NEW'
+      else
+	if author > 'COBEN'
+	  # Downstairs
+	  k[:loc] = 'FICD'
+	else
+	  # Upstairs
+	  k[:loc] = 'FICU'
+	end
+	k[:item] = 'BK'
+      end
     elsif collections.index('DVD')
       # Adult DVD, fiction or non-fiction
       k[:coll] = 'A'
@@ -213,9 +233,14 @@ def get_holding_info(field, m, dryrun)
     elsif collections.index('BIO') || collections.index('Bio')
       # Adult biography
       k[:coll] = 'A'
-      k[:loc] = 'BIO'
       k[:call] = "BIO #{author}"
-      k[:item] = 'BK'
+      if new_book
+	k[:loc] = 'NEWBIO'
+	k[:item] = 'NEW'
+      else
+        k[:loc] = 'BIO'
+        k[:item] = 'BK'
+      end
     elsif collection =~ /CAS/
       # Adult cassette
       k[:coll] = 'A'
@@ -375,7 +400,7 @@ def get_holding_info(field, m, dryrun)
   end
   if k[:coll] + k[:loc] + k[:item] =~ /UNDEFINED/
     warn("Record #{recno} (#{m[:title]},#{prefix},#{collection},#{author}) has an undefined Koha collection or location or item type!")
-    return
+    return nil
   end
 
   # Make sure that sound recordings and movies have the correct item type.
@@ -494,7 +519,11 @@ def convert_record(mandarin_record, recno, dryrun, writer)
         record.append(field)
       end
     when '852'
-      k = get_holding_info(field, m, dryrun)
+      k = get_holding_info(field, m, dryrun, recno)
+      if k.nil?
+	puts "Ignoring 852 field in record #{recno} due to errors"
+	next
+      end
 
       # Append 942 and 952 fields required by Koha.
       holding_count += 1
