@@ -147,6 +147,21 @@ def print_record(record, recno)
   end
 
 
+  # Print bib date.  Convert to yymmdd to YYYY-MM-DD.
+  if record['908'] && rec = record['908']['a']
+    if rec =~ /^(\d\d)(\d\d)(\d\d)/
+      year = $1
+      if year > '60'
+	year = '19' + year
+      else
+	year = '20' + year
+      end
+      date = "#{year}-#{$2}-#{$3}"
+      puts("Bib date (908): #{date}")
+    end
+  end
+
+
   # Print Koha-specific records.
   if record['942']
     puts("Koha item type (942-c): '#{record['942']['c'] || "undefined"}'")
