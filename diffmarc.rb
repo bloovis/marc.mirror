@@ -2,9 +2,9 @@
 
 # This script compares an old Mandarin MARC catalog with a new catalog, and creates
 # a third MARC file that has all of those records from the new catalog
-# that are not in the old one.  This is useful when trying to keep a forthcoming
-# Koha installation's catalog up-to-date with a soon-to-be-retired
-# Mandarin catalog.
+# that are not in the old one, or records whose call number has changed.
+# This is useful when trying to keep a forthcoming Koha installation's catalog
+# in sync with a soon-to-be-retired Mandarin catalog.
 
 require 'marc'
 
