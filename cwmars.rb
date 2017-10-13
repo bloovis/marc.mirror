@@ -2,6 +2,7 @@
 
 require 'set'
 require 'oga'
+require 'marc'
 
 class Converter
 
@@ -59,7 +60,11 @@ public
     @attrs = Set.new
     @text = nil
 
-    handle = File.open(filename)
+    if filename =~ /^https?:/
+      handle = IO.popen(['wget', '-O', '-', filename])
+    else
+      handle = File.open(filename)
+    end
     parser = Oga::HTML::Parser.new(handle)
     @document = parser.parse
   end
@@ -76,30 +81,43 @@ public
   end
 
   def print_marc
-    @tag_name = false
-    @tag_data = false
-    @subfield_name = false
-    @subfield_data = false
+    writer = MARC::Writer.new('junk.marc')
     puts "MARC:"
+    record = MARC::Record.new()
     @document.css("tr.marc_tag_row").each do |row|
       puts "marc tag row: "
       tag_name = row.at_css("th.marc_tag_col").text.strip
       puts "  tag name: #{tag_name}"
+      inds = []
       row.css("td.marc_tag_ind").each do |ind|
-        ind_text = ind.text.gsub(/[. ]/, '')
+        ind_text = ind.text.gsub(/[.]/, '')
 	puts "  indicator: #{ind_text}"
+	inds << ind_text
       end
-      subfields = row.at_css("td.marc_subfields")
-      if subfields
-	subfields.children.each do |child|
-	  if child.is_a?(Oga::XML::Text)
-	    puts "  tag subfield value: #{child.text}"
-	  elsif child.is_a?(Oga::XML::Element) && child.name == 'span'
-	    puts "  tag subfield name: #{child.text[-1]}"
+      if tag_name >= '000' && tag_name <= '009'
+	tag_value = row.at_css("td.marc_tag_data").text.strip
+	field = MARC::ControlField.new(tag_name, tag_value)
+      else
+	field = MARC::DataField.new(tag_name, inds[0], inds[1])
+	subfields_row = row.at_css("td.marc_subfields")
+	if subfields_row
+	  subfield_name = nil
+	  subfields_row.children.each do |child|
+	    if child.is_a?(Oga::XML::Element) && child.name == 'span'
+	      subfield_name = child.text[-1]
+	    elsif child.is_a?(Oga::XML::Text)
+	      subfield_value = child.text
+	      puts "  tag subfield name: #{subfield_name}, value: #{subfield_value}"
+	      subfield = MARC::Subfield.new(subfield_name, subfield_value)
+	      field.append(subfield)
+	    end
 	  end
 	end
       end
+      record.append(field)
     end
+    writer.write(record)
+    writer.close
   end
 
 end
