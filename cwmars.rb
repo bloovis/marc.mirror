@@ -4,6 +4,8 @@ require 'set'
 require 'oga'
 require 'marc'
 
+verbose = false   # Change to true to get a dump of web page.
+
 class Converter
 
 private
@@ -80,18 +82,18 @@ public
     print_html_node(@document)
   end
 
-  def print_marc
-    writer = MARC::Writer.new('junk.marc')
-    puts "MARC:"
+  def write_marc(output_file, verbose)
+    writer = MARC::Writer.new(output_file)
+    puts "MARC:" if verbose
     record = MARC::Record.new()
     @document.css("tr.marc_tag_row").each do |row|
-      puts "marc tag row: "
+      puts "marc tag row: " if verbose
       tag_name = row.at_css("th.marc_tag_col").text.strip
-      puts "  tag name: #{tag_name}"
+      puts "  tag name: #{tag_name}" if verbose
       inds = []
       row.css("td.marc_tag_ind").each do |ind|
         ind_text = ind.text.gsub(/[.]/, '')
-	puts "  indicator: #{ind_text}"
+	puts "  indicator: #{ind_text}" if verbose
 	inds << ind_text
       end
       if tag_name >= '000' && tag_name <= '009'
@@ -107,7 +109,7 @@ public
 	      subfield_name = child.text[-1]
 	    elsif child.is_a?(Oga::XML::Text)
 	      subfield_value = child.text
-	      puts "  tag subfield name: #{subfield_name}, value: #{subfield_value}"
+	      puts "  tag subfield name: #{subfield_name}, value: #{subfield_value}" if verbose
 	      subfield = MARC::Subfield.new(subfield_name, subfield_value)
 	      field.append(subfield)
 	    end
@@ -123,13 +125,20 @@ public
 end
 
 
-verbose = false
-ARGV.each do |filename|
-  if filename == '-v'
-    verbose = true
-  else
-    c = Converter.new(filename, verbose)
-    c.dump if verbose
-    c.print_marc
-  end
+# Check arguments. First is input file.  Second is output file.
+if ARGV.length < 2
+   puts "usage: cwmars.rb input-url-or-file MARC-output-file"
+   exit 1
 end
+
+input_file = ARGV[0]
+output_file = ARGV[1]
+
+if File.exist?(output_file)
+  puts "#{output_file} exists; will not overwrite."
+  exit 1
+end
+
+c = Converter.new(input_file, verbose)
+c.dump if verbose
+c.write_marc(output_file, verbose)
