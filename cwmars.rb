@@ -1,5 +1,12 @@
 #!/usr/bin/ruby
 
+# This script reads a web page, either a local file or a URL, that should be
+# the page that is produced when you click on "Bibliographic Record" link on
+# an Evergreen (CWMARS) detail page for a book.  The resulting page should
+# have the book's MARC information, from which the script generates an
+# equivalent MARC record.  Here is an example of such a web page:
+# http://catalog.cwmars.org/eg/opac/record/982124?qtype=author;_adv=1;detail_record_view=0;fi%3Asearch_format=book;locg=1;query=Lessing Doris 1919 2013;expand=marchtml#marchtml
+
 require 'set'
 require 'oga'
 require 'marc'
