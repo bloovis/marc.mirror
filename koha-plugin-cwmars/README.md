@@ -34,3 +34,7 @@ to the actual location of the ruby executable in your system.
 Otherwise the plugin, which is running under Apache and which may not
 have the same PATH setting as your shell, may not be able to find
 ruby.
+
+By default, the plugin will not show up in Koha in the list of 
+tool plugins.  Select "View all plugins" in the "View plugins by class"
+selector.

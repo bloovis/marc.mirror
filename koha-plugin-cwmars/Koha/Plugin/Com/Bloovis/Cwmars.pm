@@ -20,6 +20,7 @@ use MARC::Batch;
 use Cwd qw(abs_path);
 use URI::Escape qw(uri_unescape);
 use LWP::UserAgent;
+use File::Temp;
 
 ## Here we set our plugin version
 our $VERSION = "1.0";
@@ -34,7 +35,7 @@ our $metadata = {
     maximum_version => undef,
     version         => $VERSION,
     description     => 'This plugin implements a MARC import format converter '
-      . 'for C/W MARS web page that contain MARC information.',
+      . 'for C/W MARS web pages that contain MARC information.',
 };
 
 ## This is the minimum code required for a plugin's 'new' method
@@ -63,17 +64,18 @@ sub new {
 ## a holding, and converts each web page to the equivelent MARC record.
 
 sub cwmars {
-   my $url = shift;
-   my $filename = '/tmp/cwmars.marc';
+     my ( $tempfile, $tfh );
+     my $url = shift;
 
-   unlink($filename);
-   system('/usr/local/bin/cwmars.rb', $url, $filename);
+     ( $tfh, $tempfile ) = File::Temp::tempfile( SUFFIX => '.marc', UNLINK => 1 );
+     system('/usr/local/bin/cwmars.rb', '-o', $url, $tempfile);
 
-   my $batch = MARC::Batch->new('USMARC', $filename);
-   $batch->strict_off();
+     my $batch = MARC::Batch->new('USMARC', $tempfile);
+     close $tfh;
+     $batch->strict_off();
 
-   my $marc = $batch->next;
-   return $marc;
+     my $marc = $batch->next;
+     return $marc;
 }
 
 sub to_marc {
