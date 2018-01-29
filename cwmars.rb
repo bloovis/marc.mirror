@@ -11,7 +11,8 @@ require 'set'
 require 'oga'
 require 'marc'
 
-verbose = false   # Change to true to get a dump of web page.
+verbose = false   	# Change to true to get a dump of web page.
+overwrite = false	# Can be set to true by -o option
 
 class Converter
 
@@ -70,7 +71,7 @@ public
     @text = nil
 
     if filename =~ /^https?:/
-      handle = IO.popen(['wget', '-O', '-', filename])
+      handle = IO.popen(['wget', '-nv', '-O', '-', filename])
     else
       handle = File.open(filename)
     end
@@ -132,16 +133,28 @@ public
 end
 
 
+nopts = 0
+ARGV.each do |arg|
+  if arg == '-o'
+    overwrite = true
+    nopts += 1
+  else
+    break
+  end
+end
+ARGV.shift(nopts)
+
 # Check arguments. First is input file.  Second is output file.
 if ARGV.length < 2
-   puts "usage: cwmars.rb input-url-or-file MARC-output-file"
+   puts "usage: cwmars.rb [-o] input-url-or-file MARC-output-file"
+   puts "  -o : overwrite existing output file"
    exit 1
 end
 
 input_file = ARGV[0]
 output_file = ARGV[1]
 
-if File.exist?(output_file)
+if !overwrite && File.exist?(output_file)
   puts "#{output_file} exists; will not overwrite."
   exit 1
 end
