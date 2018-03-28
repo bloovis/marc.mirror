@@ -68,6 +68,7 @@ sub cwmars {
      my $url = shift;
 
      ( $tfh, $tempfile ) = File::Temp::tempfile( SUFFIX => '.marc', UNLINK => 1 );
+     $ENV{LANG} = "en_US.UTF-8";
      system('/usr/local/bin/cwmars.rb', '-o', $url, $tempfile);
 
      my $batch = MARC::Batch->new('USMARC', $tempfile);
