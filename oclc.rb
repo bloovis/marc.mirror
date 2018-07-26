@@ -204,6 +204,9 @@ ARGV.each do |arg|
   if arg == '-o'
     overwrite = true
     nopts += 1
+  elsif arg == '-v'
+    verbose = true
+    nopts += 1
   else
     break
   end
