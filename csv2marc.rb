@@ -39,92 +39,134 @@ unless dryrun
   writer = MARC::Writer.new(output_file)
 end
 
+# Column names indexed by a symbol that will be used
+# as an index to inds.
+
+columns = {
+  author:	"Author",
+  title:	"Title",
+  publisher:	"Publisher",
+  pubdate:	"Publication Date",
+  date:		"Added Date",
+  dewey:	"Dewey",
+  genre:	"Genre",
+  lcclass:	"LC Classification",
+  lccontrol:	"LC Control No.",
+  subject:	"Subject",
+  dimensions:	"Dimensions",
+  format:	"Format",
+  isbn:		"ISBN",
+  pages:	"Pages",
+  language:	"Language",
+  subtitle:	"Sub Title",
+  location:	"Location",
+  purchdate:	"Purchase Date",
+  price:	"Purchase Price",
+  index:	"Index"		# Only used to generate fake barcode for testing
+}
+
+# Indices into a data row, indexed by column symbol.
+# For example, to get the index for the dewey number,
+# use inds[:dewey].  Then, to fetch the dewew number
+# for a row, use row[inds[:dewey]].
+
+inds = {}
+
+# Map of locations to collections.
+# Collections are A (adult), YA (young adult) and J (children)
+
+locs = {
+  'AB'  => 'A',		# Audio Books
+  'BB'  => 'J',		# Board Book
+  'B'   => 'A',		# Biography & Memior
+  'E'   => 'J',		# New Readers
+  'F'   => 'A',		# Adult Fiction
+  'JF'  => 'J',		# Juvenile Fiction
+  'JNF' => 'J',		# Jr & YA NON Fiction
+  'LP'  => 'A',		# Large Print
+  'NF'  => 'A',		# Adult NON Fiction
+#  'P'   => 'J',		# Picture Books
+  'P'   => 'A',		# Poetry
+  'YA'  => 'YA'		# Young Adult Fiction
+}
+
 first = true
-isbn = -1
-title = -1
-subtitle = -1
-author = -1
-date = -1
-dewey = -1
-price = -1
-location = -1
 
 CSV.foreach(input_file) do |row|
   if first
-    isbn = row.index('ISBN')
-    unless isbn
-      puts "ISBN not seen in first row"
-      exit 1
-    end
-    title = row.index('Title')
-    unless title
-      puts "Title not seen in first row"
-      exit 1
-    end
-    subtitle = row.index('Sub Title')
-    unless subtitle
-      puts "Subtitle not seen in first row"
-      exit 1
-    end
-    author = row.index('Author')
-    unless author
-      puts "Author not seen in first row"
-      exit 1
-    end
-    date = row.index('Added Date')
-    unless date
-      puts "Added date not seen in first row"
-      exit 1
-    end
-    dewey = row.index('Dewey')
-    unless dewey
-      puts "Dewey not seen in first row"
-      exit 1
-    end
-    price = row.index('Purchase Price')
-    unless price
-      puts "Purchase Price not seen in first row"
-      exit 1
-    end
-    location = row.index('Location')
-    unless location
-       puts "Location not seen in first row"
+    columns.each do |key, value|
+      ind = row.index(value)
+      if ind
+	inds[key] = ind
+      else
+	puts "#{value} not seen in first row"
+	exit 1
+      end
     end
     first = false
   else
     if dryrun
-      puts "ISBN: #{row[isbn]} Title: #{row[title]} Subtitle: #Author: #{row[author]}"
+      puts "ISBN: #{row[inds[:isbn]]} Title: #{row[inds[:title]]} Subtitle: #{row[inds[:subtitle]]} #Author: #{row[inds[:author]]}"
     else
       # Write MARC record
       record = MARC::Record.new
       # IBSN
       record.append(MARC::DataField.new(
         '20','','',
-	['a', row[isbn]]))
+	['a', row[inds[:isbn]]]))
       # Author
       record.append(MARC::DataField.new(
         '100','0','',
-	['a', row[author]]))
+	['a', row[inds[:author]]]))
       # Title/Subtitle
+      title = row[inds[:title]]
       record.append(MARC::DataField.new(
         '245','0','0',
-	['a', row[title]],
-	['b', row[subtitle]]))
+	['a', title],
+	['b', row[inds[:subtitle]]]))
+
       # Koha holding information
+
       # Convert date from Mon DD, YYYY to YYYY-MM-DD
-      if row[date] =~ /^(\w\w\w) (\d\d), (\d\d\d\d)$/
+      if row[inds[:date]] =~ /^(\w\w\w) (\d\d), (\d\d\d\d)$/
         month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
 	         'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].index($1) + 1
 	day = $2
 	year = $3
 	datestr = year + '-' + sprintf("%02d", month) + '-' + day
       end
+
+      # The locations look like: JF = Juvenile Fiction
+      # Use the first word as an index to the locs hash,
+      # which gets us the collection code.
+      loc = row[inds[:location]]
+      if loc =~ /^(\w+) (.*)/
+	location = $1
+	remainder = $2
+	collection = locs[location]
+	unless collection
+	  puts "Unrecognized location #{location} for #{title}"
+        end
+	# Special case for "P", which is used for Picture Books and Poetry.
+	if location == 'P'
+	  if remainder =~ /Picture/
+	    location = 'PIC'
+	    collection = 'J'
+	  end
+	end
+      else
+	puts "Invalid location #{location} for #{title}"
+      end
       record.append(MARC::DataField.new(
 	'952', ' ',  ' ',
-        ['c', row[location]],
+	['8', collection],
+	['a', 'RCML'],
+	['b', 'RCML'],
+        ['c', location],
 	['d', datestr],
-	['o', row[dewey]],
-	['v', row[price]]))
+	['o', row[inds[:dewey]]],
+	['p', row[inds[:index]]],	# fake barcode -- to be corrected at 1st checkout
+	['y', 'BK']))			# assume item type is book -- how are DVDs cataloged?
       writer.write(record)
     end
   end
