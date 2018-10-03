@@ -7,12 +7,16 @@
 require 'csv'
 require 'marc'
 
-dryrun = false
+dryrun = false		# Can be set to true by -n option
+overwrite = false	# Can be set to true by -o option
 
 nopts = 0
 ARGV.each do |arg|
   if arg == '-n'
     dryrun = true
+    nopts += 1
+  elsif arg == '-o'
+    overwrite = true
     nopts += 1
   else
     break
@@ -23,7 +27,8 @@ ARGV.shift(nopts)
 # Check arguments. First is input file.  Second is output file.
 if ARGV.length < 2
    puts "usage: csv2marc.rb [-n] [-u] inputfile.csv outputfile.marc"
-   puts "-n : don't write outfile, just print records from inputfile.csv"
+   puts "  -n : don't write outfile, just print records from inputfile.csv"
+   puts "  -o : overwrite existing output file"
    exit 1
 end
 
@@ -31,7 +36,7 @@ input_file = ARGV[0]
 output_file = ARGV[1]
 
 unless dryrun
-  if File.exist?(output_file)
+  if !overwrite && File.exist?(output_file)
     puts "#{output_file} exists; will not overwrite."
     exit 1
   end
@@ -164,7 +169,7 @@ CSV.foreach(input_file) do |row|
 	['b', 'RCML'],
         ['c', location],
 	['d', datestr],
-	['o', row[inds[:dewey]]],
+	['o', row[inds[:dewey]]],	# have to figure out correct value for fiction, kids, etc.
 	['p', row[inds[:index]]],	# fake barcode -- to be corrected at 1st checkout
 	['y', 'BK']))			# assume item type is book -- how are DVDs cataloged?
       writer.write(record)
