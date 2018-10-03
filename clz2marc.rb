@@ -6,9 +6,47 @@
 
 require 'csv'
 require 'marc'
+require 'zoom'
+
+
+# Attempt to fetch a MARC record for a given ISBN from a
+# Z39.50 server.  If found, return it as a MARC::Record object;
+# otherwise return nil.
+
+def get_z3950(isbn)
+  servers = [
+    [ 'lx2.loc.gov',		   210,	'LCDB' ],
+    [ 'catalog.nypl.org',	   210,	'INNOPAC' ],
+    [ 'catalog.dallaslibrary.org', 210,	'PAC' ]
+  ]
+
+  servers.each do |rec|
+    host = rec[0]
+    port = rec[1]
+    db = rec[2]
+
+    begin
+      ZOOM::Connection.open(host, port) do |conn|
+	conn.database_name = db
+	conn.preferred_record_syntax = 'USMARC'
+	rset = conn.search("@attr 1=7 #{isbn}")
+	if rset[0]
+	  puts "ISBN #{isbn} found at #{host}"
+	  return MARC::Record.new_from_marc(rset[0].raw)
+	else
+	  puts "ISBN #{isbn} not found at #{host}"
+	end
+      end
+    rescue => exc
+      puts "Exception trying to search #{host}: #{exc}"
+    end
+  end
+  return nil
+end
 
 dryrun = false		# Can be set to true by -n option
 overwrite = false	# Can be set to true by -o option
+use_z3950 = false	# Can be set to true by -z option
 
 nopts = 0
 ARGV.each do |arg|
@@ -18,6 +56,9 @@ ARGV.each do |arg|
   elsif arg == '-o'
     overwrite = true
     nopts += 1
+  elsif arg == '-z'
+    use_z3950 = true
+    nopts += 1
   else
     break
   end
@@ -26,9 +67,10 @@ ARGV.shift(nopts)
 
 # Check arguments. First is input file.  Second is output file.
 if ARGV.length < 2
-   puts "usage: csv2marc.rb [-n] [-u] inputfile.csv outputfile.marc"
+   puts "usage: clz2marc.rb [-n] [-o] inputfile.csv outputfile.marc"
    puts "  -n : don't write outfile, just print records from inputfile.csv"
    puts "  -o : overwrite existing output file"
+   puts "  -z : use Z39.50 servers to fetch bib record"
    exit 1
 end
 
@@ -77,8 +119,16 @@ columns = {
 
 inds = {}
 
-# Map of locations to collections.
-# Collections are A (adult), YA (young adult) and J (children)
+# Map of location code to collections.
+# Collections are A (adult), YA (young adult) and J (children).
+# This library used location strings like this:
+#   YA = Young Adult Fiction
+# where the word to the left of the = appears to be
+# a location code, and the words to the right appear
+# to be a verbose description. Unfortunately, this library
+# used "P" as the location code for both poetry and picture
+# books, so the code below will use "PIC"
+# for picture books.
 
 locs = {
   'AB'  => 'A',		# Audio Books
@@ -110,27 +160,72 @@ CSV.foreach(input_file) do |row|
     end
     first = false
   else
+    isbn = row[inds[:isbn]]
     if dryrun
-      puts "ISBN: #{row[inds[:isbn]]} Title: #{row[inds[:title]]} Subtitle: #{row[inds[:subtitle]]} #Author: #{row[inds[:author]]}"
+      puts "ISBN: #{isbn} Title: #{row[inds[:title]]} Subtitle: #{row[inds[:subtitle]]} #Author: #{row[inds[:author]]}"
     else
-      # Write MARC record
-      record = MARC::Record.new
-      # IBSN
-      record.append(MARC::DataField.new(
-        '20','','',
-	['a', row[inds[:isbn]]]))
-      # Author
-      record.append(MARC::DataField.new(
-        '100','0','',
-	['a', row[inds[:author]]]))
-      # Title/Subtitle
-      title = row[inds[:title]]
-      record.append(MARC::DataField.new(
-        '245','0','0',
-	['a', title],
-	['b', row[inds[:subtitle]]]))
+      # Try to fetch a MARC record from a Z39.50 server.
+      # If not found, create one from scratch, filling
+      # in as much as we can from the Collectorz info.
+      record = nil
+      if isbn =~ /^\d+$/ && use_z3950
+	record = get_z3950(isbn)
+      end
+      unless record
+        record = MARC::Record.new
 
-      # Koha holding information
+	# IBSN
+	record.append(MARC::DataField.new(
+	  '20',' ',' ',
+	  ['a', isbn]))
+
+	# Author
+	record.append(MARC::DataField.new(
+	  '100','0',' ',
+	  ['a', row[inds[:author]]]))
+
+	# Title/Subtitle
+	title = row[inds[:title]]
+	record.append(MARC::DataField.new(
+	  '245','0','0',
+	  ['a', title],
+	  ['b', row[inds[:subtitle]]]))
+
+        # Library of Congress classification
+	lcclass = row[inds[:lcclass]]
+	classno, cutters = lcclass.split(' ', 2)
+	record.append(MARC::DataField.new(
+	  '50','0','0',
+	  ['a', classno],
+	  ['b', cutters]))
+
+	# Library of Congress control number
+	lcno = row[inds[:lccontrol]]
+	record.append(MARC::DataField.new(
+	  '10',' ',' ',
+	  ['a', lcno]))
+
+	# Pages, format, dimensions
+	pages = row[inds[:pages]]
+	format = row[inds[:format]]
+	dimensions = row[inds[:dimensions]]
+	record.append(MARC::DataField.new(
+	  '300',' ',' ',
+	  ['a', "#{pages} p." ],
+	  ['b', format ],
+	  ['c', dimensions]))
+
+	# Publisher and publication date
+	publisher = row[inds[:publisher]]
+	pubdate = row[inds[:pubdate]]
+	record.append(MARC::DataField.new(
+	  '260',' ',' ',
+	  ['b', publisher],
+	  ['c', pubdate]))
+
+      end
+
+      # Determine Koha holding information.
 
       # Convert date from Mon DD, YYYY to YYYY-MM-DD
       if row[inds[:date]] =~ /^(\w\w\w) (\d\d), (\d\d\d\d)$/
@@ -162,6 +257,9 @@ CSV.foreach(input_file) do |row|
       else
 	puts "Invalid location #{location} for #{title}"
       end
+
+      # Append Koha holding information.
+
       record.append(MARC::DataField.new(
 	'952', ' ',  ' ',
 	['8', collection],
