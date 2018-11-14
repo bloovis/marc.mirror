@@ -56,18 +56,6 @@ sub new {
 ## the plugin is capable of validating a patron for the SIP2 server.
 ## Return a true value if the patron is valid; false otherwise.
 
-my @kanopy_ips = (
-  "::ffff:192.168.122.1",	# for testing only!
-  "208.66.24.46",
-  "104.239.197.182",
-  "18.209.148.51",
-  "34.232.89.121",
-  "34.234.81.211",
-  "34.235.227.70",
-  "34.235.53.173",
-  "52.203.108.44"
-);
-
 sub sip2_validate_patron {
     my ( $self, $args ) = @_;
 
@@ -75,16 +63,18 @@ sub sip2_validate_patron {
     my $server = $args->{server};
 
     if ( $patron ) {
-        my $ipaddr = $server->{server}->{client}->peerhost;
 	my $id = $server->{account}->{id};
-	if ($id eq 'kanopy') {
-	    foreach my $kanopy ( @kanopy_ips ) {
-		if ( $ipaddr =~ /^(::ffff:)?\Q$kanopy\E$/ ) {
-		    my $borrowernumber = $patron->{borrowernumber};
-		    my $value = C4::Members::Attributes::GetBorrowerAttributeValue( $borrowernumber, 'KANOPY_OK' );
-		    return $value eq "1";
-		}
-	    }
+	my $attr = undef;
+
+	if ( $id eq 'kanopy' ) {
+	    $attr = 'KANOPY_OK';
+	} elsif ( $id eq 'gmlc' ) {
+	    $attr = 'GMLC_OK';
+	}
+	if ($attr) {
+	    my $borrowernumber = $patron->{borrowernumber};
+	    my $value = C4::Members::Attributes::GetBorrowerAttributeValue( $borrowernumber, $attr );
+	    return $value eq "1";
 	}
     }
     return 1;
