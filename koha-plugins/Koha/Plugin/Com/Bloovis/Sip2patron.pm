@@ -76,13 +76,16 @@ sub sip2_validate_patron {
 
     if ( $patron ) {
         my $ipaddr = $server->{server}->{client}->peerhost;
-        foreach my $kanopy ( @kanopy_ips ) {
-            if ( $ipaddr =~ /^(::ffff:)?\Q$kanopy\E$/ ) {
-                my $borrowernumber = $patron->{borrowernumber};
-                my $value = C4::Members::Attributes::GetBorrowerAttributeValue( $borrowernumber, 'KANOPY_OK' );
-                return $value eq "1";
-            }
-        }
+	my $id = $server->{account}->{id};
+	if ($id eq 'kanopy') {
+	    foreach my $kanopy ( @kanopy_ips ) {
+		if ( $ipaddr =~ /^(::ffff:)?\Q$kanopy\E$/ ) {
+		    my $borrowernumber = $patron->{borrowernumber};
+		    my $value = C4::Members::Attributes::GetBorrowerAttributeValue( $borrowernumber, 'KANOPY_OK' );
+		    return $value eq "1";
+		}
+	    }
+	}
     }
     return 1;
 }
