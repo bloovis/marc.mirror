@@ -8,83 +8,6 @@ require 'csv'
 require 'marc'
 require 'zoom'
 
-# Attempt to fetch a MARC record for a given ISBN from a
-# Z39.50 server.  If found, return it as a MARC::Record object;
-# otherwise return nil.
-
-def get_z3950(isbn)
-  servers = [
-    [ 'lx2.loc.gov',		   210,	'LCDB' ],
-    [ 'catalog.nypl.org',	   210,	'INNOPAC' ],
-    [ 'catalog.dallaslibrary.org', 210,	'PAC' ]
-  ]
-
-  servers.each do |rec|
-    host = rec[0]
-    port = rec[1]
-    db = rec[2]
-
-    begin
-      ZOOM::Connection.open(host, port) do |conn|
-	conn.database_name = db
-	conn.preferred_record_syntax = 'USMARC'
-	rset = conn.search("@attr 1=7 #{isbn}")
-	if rset[0]
-	  puts "ISBN #{isbn} found at #{host}"
-	  return MARC::Record.new_from_marc(rset[0].raw)
-	else
-	  puts "ISBN #{isbn} not found at #{host}"
-	end
-      end
-    rescue => exc
-      puts "Exception trying to search #{host}: #{exc}"
-    end
-  end
-  return nil
-end
-
-dryrun = false		# Can be set to true by -n option
-overwrite = false	# Can be set to true by -o option
-use_z3950 = false	# Can be set to true by -z option
-
-nopts = 0
-ARGV.each do |arg|
-  if arg == '-n'
-    dryrun = true
-    nopts += 1
-  elsif arg == '-o'
-    overwrite = true
-    nopts += 1
-  elsif arg == '-z'
-    use_z3950 = true
-    nopts += 1
-  else
-    break
-  end
-end
-ARGV.shift(nopts)
-
-# Check arguments. First is input file.  Second is output file.
-if ARGV.length < 2
-   puts "usage: clz2marc.rb [-n] [-o] inputfile.csv outputfile.marc"
-   puts "  -n : don't write outfile, just print records from inputfile.csv"
-   puts "  -o : overwrite existing output file"
-   puts "  -z : use Z39.50 servers to fetch bib record"
-   exit 1
-end
-
-input_file = ARGV[0]
-output_file = ARGV[1]
-
-unless dryrun
-  if !overwrite && File.exist?(output_file)
-    puts "#{output_file} exists; will not overwrite."
-    exit 1
-  end
-  puts("Writing #{output_file} using utf-8 encoding")
-  writer = MARC::Writer.new(output_file)
-end
-
 # Column names indexed by a symbol that will be used
 # as an index to inds.
 
@@ -155,10 +78,448 @@ locs = {
   'YA'  => 'YA'		# Young Adult Fiction
 }
 
+# Convert a Collectorz date into an ISO date compatible with Koha.
+
+def convertdate(date)
+  if date =~ /^(\w\w\w) (\d\d), (\d\d\d\d)$/
+    month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+	     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].index($1) + 1
+    day = $2
+    year = $3
+    return year + '-' + sprintf("%02d", month) + '-' + day
+  else
+    return ''
+  end
+end
+
+# Determine the three-letter movie genre abbreviation for use
+# in the call number (spine tag).  Unfortunately, the genre
+# field can contain multiple genres, apparently in alphabetical order.
+# Some examples:
+#   Action, Adventure, Biography, Drama, History, Music, Romance, War
+#   Action, Adventure, Animation, Anime, Drama, Fantasy, Mystery, Science Fiction, Thriller
+#   Comedy, Drama, History
+# There is no obvious way to determine the genre tag
+# in actual use.  Picking the first one is almost certainly
+# going to be wrong, because the alphabetical order means
+# that Action would always win out over, say, Science Fiction.
+# We could say that certain genres have priority.
+# For example, we might prioritize them as follows:
+#   Animation
+#   Family
+#   Comedy
+# But this is completely arbitrary, and likely to be wrong most
+# of the time.  We will just have to pick one genre somehow,
+# and then correct it in the catalog when the item is checked
+# out the first time (which we have to do anyway to get
+# the correct barcode into the catalog).
+
+def shortgenre(genres)
+  genre3 = ''
+  if genres.index('Animation')
+    genre3 = 'ANI'
+  elsif genres.index('Family')
+    genre3 = 'FAM'
+  elsif genres.index('Comedy')
+    genre3 = 'COM'
+  elsif genres.index('Science Fiction')
+    genre3 = 'SCI'
+  else
+    firstgenre = genres[0]
+    if firstgenre
+      genre3 = firstgenre[0..2].upcase
+    end
+  end
+  return genre3
+end
+
+# Calculate a three-character upper-case abbreviation of the title, without
+# a leading "the" or "a".
+
+def shorttitle(title)
+  title3 = ''
+  if title
+    if title =~ /^(the |a )?(.*)/i
+      title3 = $2[0..2].upcase
+    else
+      title3 = title[0..2].upcase
+    end
+  end
+  return title3
+end
+
+# Convert a row from a CSV book catalog to a Koha-compatible
+# MARC record.
+
+def convertbook(row, inds, dryrun, use_z3950, locs, writer)
+  isbn = row[inds[:isbn]]
+  if dryrun
+    puts "ISBN: #{isbn} Title: #{row[inds[:title]]} Subtitle: #{row[inds[:subtitle]]} #Author: #{row[inds[:author]]}"
+  else
+    record = nil
+
+    # Try to fetch a MARC record from a Z39.50 server.
+    # If not found, create one from scratch, filling
+    # in as much as we can from the Collectorz info.
+    if isbn =~ /^\d+$/ && use_z3950
+      record = get_z3950(isbn)
+    end
+
+    unless record
+      record = MARC::Record.new
+
+      # IBSN
+      record.append(MARC::DataField.new(
+	'20',' ',' ',
+	['a', isbn]))
+
+      # Author
+      author = row[inds[:author]]
+      record.append(MARC::DataField.new(
+	'100','0',' ',
+	['a', author]))
+
+      # Title/Subtitle
+      title = row[inds[:title]]
+      record.append(MARC::DataField.new(
+	'245','0','0',
+	['a', title],
+	['b', row[inds[:subtitle]]]))
+
+      # Get genre field.
+      genre = row[inds[:genre]]
+      if genre
+	genres = genre.split(/\s*,\s*/)
+	genres.each do |g|
+	  record.append(MARC::DataField.new(
+	    '653', ' ', '6',
+	    ['a', g.gsub(/&apos/, '')]))
+	end
+      end
+
+      # Library of Congress classification
+      lcclass = row[inds[:lcclass]]
+      if lcclass
+	classno, cutters = lcclass.split(' ', 2)
+	record.append(MARC::DataField.new(
+	  '50','0','0',
+	  ['a', classno],
+	  ['b', cutters]))
+      else
+	# puts "Nil lcclass for #{title}"
+      end
+
+      # Library of Congress control number
+      lcno = row[inds[:lccontrol]]
+      record.append(MARC::DataField.new(
+	'10',' ',' ',
+	['a', lcno]))
+
+      # Pages, format, dimensions
+      pages = row[inds[:pages]]
+      format = row[inds[:format]]
+      dimensions = row[inds[:dimensions]]
+      record.append(MARC::DataField.new(
+	'300',' ',' ',
+	['a', "#{pages} p." ],
+	['b', format ],
+	['c', dimensions]))
+
+      # Publisher and publication date
+      publisher = row[inds[:publisher]]
+      pubdate = row[inds[:pubdate]]
+      record.append(MARC::DataField.new(
+	'260',' ',' ',
+	['b', publisher],
+	['c', pubdate]))
+
+    end
+
+    # Determine Koha holding information.
+
+    # Convert date from Mon DD, YYYY to YYYY-MM-DD
+    datestr = convertdate(row[inds[:date]])
+
+    # The locations look like: JF = Juvenile Fiction
+    # Use the first word as an index to the locs hash,
+    # which gets us the collection code.
+    loc = row[inds[:location]]
+    location = ''
+    if loc =~ /^(\w+) (.*)/
+      location = $1
+      remainder = $2
+      collection = locs[location]
+      unless collection
+	puts "Unrecognized location #{location} for #{title}"
+      end
+
+      # Special case for "P", which is (mistakenly?) used for
+      # both Picture Books and Poetry.
+      if location == 'P'
+	if remainder =~ /Picture/
+	  location = 'P'
+	  collection = 'J'
+	else
+	  location = 'PO'
+	  collection = 'A'
+	end
+      end
+    else
+      puts "Invalid location #{location} for #{title}"
+    end
+
+    # Get Title abbreviation.
+    title3 = shorttitle(title)
+
+    # Somehow determine the surname so we can figure what is
+    # on the spine tag, hence in the call number.  Unfortuately,
+    # the author field in collectorz doesn't put the surname first,
+    # and it can look like any of the following:
+    #   Peter Ackroyd
+    #   David A. Aguilar
+    #   Georgina Andrews, Kate Knighton
+    #   The Metropolitan Museum of Art, N.Y. New York
+    #   <empty string>
+    author3 = ''
+    if author
+      authors = author.split(',')
+      firstauthor = authors[0]
+      if firstauthor
+	surname = firstauthor.split[-1]
+	author3 = surname[0..2].upcase
+      end
+    end
+
+    # Get genre abbreviation.
+    if genre
+      genre3 = shortgenre(genres)
+    end
+
+    # Get Dewey number.
+    dewey = row[inds[:dewey]] || ''
+
+    # Determine the call number (found on the spine tag).
+    if location
+      call = location + ' '
+      case location
+      when 'DVD'
+	call += genre + ' ' + title3
+      when 'F'
+	call += author3
+      when 'B'
+	call += author3
+      when 'NF'
+	call += dewey + ' ' + author3
+      when 'P'
+	call += author3
+      when 'E'
+	call += author3
+      when 'BB'
+	call += author3
+      when 'JF'
+	call += author3
+      when 'YA'
+	call += author3
+      when 'JNF'
+	call += dewey + ' ' + author3
+      when 'AB'
+	call += author3
+      end
+    else
+      call = ''
+    end
+    call.strip!
+
+    # Append Koha holding information.
+    record.append(MARC::DataField.new(
+      '952', ' ',  ' ',
+      ['8', collection],
+      ['a', 'RCML'],
+      ['b', 'RCML'],
+      ['c', location],
+      ['d', datestr],
+      ['o', call],
+#	['p', row[inds[:index]]],	# fake barcode -- to be corrected at 1st checkout
+      ['y', 'BK']))			# assume item type is book -- how are DVDs cataloged?
+    writer.write(record)
+  end
+end
+
+# Convert a row from a CSV movie catalog to a Koha-compatible
+# MARC record.
+
+def convertmovie(row, inds, dryrun, use_z3950, locs, writer)
+  if dryrun
+    puts "Title: #{row[inds[:title]]} Release: #{row[inds[:release]]} Genre: #{row[inds[:genre]]}"
+    puts "  Runtime: #{row[inds[:runtime]]} Director: #{row[inds[:director]]} Format #{row[inds[:format]]}"
+    puts "  Distributor: #{row[inds[:distributor]]} Added Date: #{row[inds[:date]]}"
+  else
+    record = MARC::Record.new
+
+    # Title
+    title = row[inds[:title]]
+    record.append(MARC::DataField.new(
+      '245','0','0',
+      ['a', title]))
+
+    # Get the title abbreviation.
+    title3 = shorttitle(title)
+
+    # Get the run time.
+    runtime = row[inds[:runtime]]
+    if runtime
+      record.append(MARC::DataField.new(
+	'306',' ',' ',
+	['a', sprintf("%06d", runtime.to_i)]))
+    end
+
+    # Distributor and release date.  The release format is
+    # inconsistent: sometimes it is a year (e.g., 2009),
+    # but sometimes it is a full date (e.g., Jan 01, 2017).
+    # So just take the final number as the date.
+    distributor = row[inds[:distributor]]
+    release = row[inds[:release]]
+    if distributor && release
+      if release =~ /(\d+)$/
+	release = $1
+      end
+      record.append(MARC::DataField.new(
+	'260',' ',' ',
+	['b', distributor],
+	['c', release]))
+    end
+
+    # Get genre(s).
+    genre = row[inds[:genre]]
+    if genre
+      genres = genre.split(/\s*,\s*/)
+      genres.each do |g|
+	record.append(MARC::DataField.new(
+	  '653', ' ', '6',
+	  ['a', g.gsub(/&apos/, '')]))
+      end
+    end
+
+    # Get director.
+    director = row[inds[:director]]
+    if director
+      record.append(MARC::DataField.new(
+	'700','1',' ',
+	['a', director],
+	['e', 'film director']))
+    end
+
+    # Try to determine genre for spine tag. See comment in shortgenre
+    # above for a discussion about why this is so error-prone.
+    if genre
+      genre3 = shortgenre(genres)
+    end
+
+    # Fabricate a call number.
+    call = ('DVD ' + genre3 + ' ' + title3).strip
+
+    # Convert date from Mon DD, YYYY to YYYY-MM-DD
+    datestr = convertdate(row[inds[:date]])
+
+    # Append Koha holding information.
+    record.append(MARC::DataField.new(
+      '952', ' ',  ' ',
+      ['8', 'A'],
+      ['a', 'RCML'],
+      ['b', 'RCML'],
+      ['c', 'DVD'],
+      ['d', datestr],
+      ['o', call],
+#	['p', row[inds[:index]]],	# fake barcode -- to be corrected at 1st checkout
+      ['y', 'DVD']))			# assume item type is book -- how are DVDs cataloged?
+    writer.write(record)
+  end
+end
+
+# Attempt to fetch a MARC record for a given ISBN from a
+# Z39.50 server.  If found, return it as a MARC::Record object;
+# otherwise return nil.
+
+def get_z3950(isbn)
+  servers = [
+    [ 'lx2.loc.gov',		   210,	'LCDB' ],
+    [ 'catalog.nypl.org',	   210,	'INNOPAC' ],
+    [ 'catalog.dallaslibrary.org', 210,	'PAC' ]
+  ]
+
+  servers.each do |rec|
+    host = rec[0]
+    port = rec[1]
+    db = rec[2]
+
+    begin
+      ZOOM::Connection.open(host, port) do |conn|
+	conn.database_name = db
+	conn.preferred_record_syntax = 'USMARC'
+	rset = conn.search("@attr 1=7 #{isbn}")
+	if rset[0]
+	  puts "ISBN #{isbn} found at #{host}"
+	  return MARC::Record.new_from_marc(rset[0].raw)
+	else
+	  puts "ISBN #{isbn} not found at #{host}"
+	end
+      end
+    rescue => exc
+      puts "Exception trying to search #{host}: #{exc}"
+    end
+  end
+  return nil
+end
+
+dryrun = false		# Can be set to true by -n option
+overwrite = false	# Can be set to true by -o option
+use_z3950 = false	# Can be set to true by -z option
+
 book = true		# true if book catalog, false if movie catalog
 first = true		# true if reading first row in CSV file
 
+# Check for options before file arguments.
+nopts = 0
+ARGV.each do |arg|
+  if arg == '-n'
+    dryrun = true
+    nopts += 1
+  elsif arg == '-o'
+    overwrite = true
+    nopts += 1
+  elsif arg == '-z'
+    use_z3950 = true
+    nopts += 1
+  else
+    break
+  end
+end
+ARGV.shift(nopts)
+
+# Check arguments. First is input file.  Second is output file.
+if ARGV.length < 2
+   puts "usage: clz2marc.rb [-n] [-o] inputfile.csv outputfile.marc"
+   puts "  -n : don't write outfile, just print records from inputfile.csv"
+   puts "  -o : overwrite existing output file"
+   puts "  -z : use Z39.50 servers to fetch bib record"
+   exit 1
+end
+
+input_file = ARGV[0]
+output_file = ARGV[1]
+
+unless dryrun
+  if !overwrite && File.exist?(output_file)
+    puts "#{output_file} exists; will not overwrite."
+    exit 1
+  end
+  puts("Writing #{output_file} using utf-8 encoding")
+  writer = MARC::Writer.new(output_file)
+end
+
 CSV.foreach(input_file) do |row|
+  # The first row contains column headers, from which we determine
+  # whether we're reading a book catalog or a movie catalog.
   if first
     if row.index('Director')
       book = false
@@ -178,233 +539,10 @@ CSV.foreach(input_file) do |row|
     end
     first = false
   else
-    isbn = row[inds[:isbn]]
-    if dryrun
-      puts "ISBN: #{isbn} Title: #{row[inds[:title]]} Subtitle: #{row[inds[:subtitle]]} #Author: #{row[inds[:author]]}"
+    if book
+      convertbook(row, inds, dryrun, use_z3950, locs, writer)
     else
-      # Try to fetch a MARC record from a Z39.50 server.
-      # If not found, create one from scratch, filling
-      # in as much as we can from the Collectorz info.
-      record = nil
-      if isbn =~ /^\d+$/ && use_z3950
-	record = get_z3950(isbn)
-      end
-      unless record
-        record = MARC::Record.new
-
-	# IBSN
-	record.append(MARC::DataField.new(
-	  '20',' ',' ',
-	  ['a', isbn]))
-
-	# Author
-	author = row[inds[:author]]
-	record.append(MARC::DataField.new(
-	  '100','0',' ',
-	  ['a', author]))
-
-	# Title/Subtitle
-	title = row[inds[:title]]
-	record.append(MARC::DataField.new(
-	  '245','0','0',
-	  ['a', title],
-	  ['b', row[inds[:subtitle]]]))
-
-        # Library of Congress classification
-	lcclass = row[inds[:lcclass]]
-	if lcclass
-	  classno, cutters = lcclass.split(' ', 2)
-	  record.append(MARC::DataField.new(
-	    '50','0','0',
-	    ['a', classno],
-	    ['b', cutters]))
-	else
-	  # puts "Nil lcclass for #{title}"
-	end
-
-	# Library of Congress control number
-	lcno = row[inds[:lccontrol]]
-	record.append(MARC::DataField.new(
-	  '10',' ',' ',
-	  ['a', lcno]))
-
-	# Pages, format, dimensions
-	pages = row[inds[:pages]]
-	format = row[inds[:format]]
-	dimensions = row[inds[:dimensions]]
-	record.append(MARC::DataField.new(
-	  '300',' ',' ',
-	  ['a', "#{pages} p." ],
-	  ['b', format ],
-	  ['c', dimensions]))
-
-	# Publisher and publication date
-	publisher = row[inds[:publisher]]
-	pubdate = row[inds[:pubdate]]
-	record.append(MARC::DataField.new(
-	  '260',' ',' ',
-	  ['b', publisher],
-	  ['c', pubdate]))
-
-	# Get genre field
-	genre = row[inds[:genre]]
-      end
-
-      # Determine Koha holding information.
-
-      # Convert date from Mon DD, YYYY to YYYY-MM-DD
-      if row[inds[:date]] =~ /^(\w\w\w) (\d\d), (\d\d\d\d)$/
-        month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-	         'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].index($1) + 1
-	day = $2
-	year = $3
-	datestr = year + '-' + sprintf("%02d", month) + '-' + day
-      end
-
-      # The locations look like: JF = Juvenile Fiction
-      # Use the first word as an index to the locs hash,
-      # which gets us the collection code.
-      loc = row[inds[:location]]
-      location = ''
-      if loc =~ /^(\w+) (.*)/
-	location = $1
-	remainder = $2
-	collection = locs[location]
-	unless collection
-	  puts "Unrecognized location #{location} for #{title}"
-        end
-	# Special case for "P", which is (mistakenly?) used for
-	# both Picture Books and Poetry.
-	if location == 'P'
-	  if remainder =~ /Picture/
-	    location = 'P'
-	    collection = 'J'
-	  else
-	    location = 'PO'
-	    collection = 'A'
-	  end
-	end
-      else
-	puts "Invalid location #{location} for #{title}"
-      end
-
-      # Calculate a three-character upper-case abbreviation of the title, without
-      # a leading "the" or "a".
-      title3 = ''
-      if title
-	if title =~ /^(the |a )?(.*)/i
-	  title3 = $2[0..2].upcase
-	else
-	  title3 = title[0..2].upcase
-	end
-      end
-
-      # Somehow determine the surname so we can figure what is
-      # on the spine tag, hence in the call number.  Unfortuately,
-      # the author field in collectorz doesn't put the surname first,
-      # and it can look like any of the following:
-      #   Peter Ackroyd
-      #   David A. Aguilar
-      #   Georgina Andrews, Kate Knighton
-      #   The Metropolitan Museum of Art, N.Y. New York
-      #   <empty string>
-      author3 = ''
-      if author
-	authors = author.split(',')
-	firstauthor = authors[0]
-	if firstauthor
-	  surname = firstauthor.split[-1]
-	  author3 = surname[0..2].upcase
-	end
-      end
-
-      # Determine the three-letter movie genre abbreviation for use
-      # in the call number (spine tag).  Unfortunately, the genre
-      # field can contain multiple genres, apparently in alphabetical order.
-      # Some examples:
-      #   Action, Adventure, Biography, Drama, History, Music, Romance, War
-      #   Action, Adventure, Animation, Anime, Drama, Fantasy, Mystery, Science Fiction, Thriller
-      #   Comedy, Drama, History
-      # There is no obvious way to determine the genre tag
-      # in actual use.  Picking the first one is almost certainly
-      # going to be wrong, because the alphabetical order means
-      # that Action would always win out over, say, Science Fiction.
-      # We could say that certain genres have priority.
-      # For example, we might prioritize them as follows:
-      #   Animation
-      #   Family
-      #   Comedy
-      # But this is completely arbitrary, and likely to be wrong most
-      # of the time.  We will just have to pick one genre somehow,
-      # and then correct it in the catalog when the item is checked
-      # out the first time (which we have to do anyway to get
-      # the correct barcode into the catalog).
-      genre3 = ''
-      if genre
-	genres = genre.split(/\s*,\s*/)
-	if genres.index('Animation')
-	  genre3 = 'ANI'
-	elsif genres.index('Family')
-	  genre3 = 'FAM'
-	elsif genres.index('Comedy')
-	  genre3 = 'COM'
-	elsif genres.index('Science Fiction')
-	  genre3 = 'SCI'
-	else
-	  firstgenre = genres[0]
-	  if firstgenre
-	    genre3 = firstgenre[0..2].upcase
-	  end
-	end
-      end
-
-      # Get Dewey number
-      dewey = row[inds[:dewey]] || ''
-
-      # Determine the call number (found on the spine tag).
-      if location
-	call = location + ' '
-	case location
-	when 'DVD'
-	  call += genre + ' ' + title3
-	when 'F'
-	  call += author3
-	when 'B'
-	  call += author3
-	when 'NF'
-	  call += dewey + ' ' + author3
-	when 'P'
-	  call += author3
-	when 'E'
-	  call += author3
-	when 'BB'
-	  call += author3
-	when 'JF'
-	  call += author3
-	when 'YA'
-	  call += author3
-	when 'JNF'
-	  call += dewey + ' ' + author3
-	when 'AB'
-	  call += author3
-	end
-      else
-	call = ''
-      end
-
-      # Append Koha holding information.
-
-      record.append(MARC::DataField.new(
-	'952', ' ',  ' ',
-	['8', collection],
-	['a', 'RCML'],
-	['b', 'RCML'],
-        ['c', location],
-	['d', datestr],
-	['o', call],
-#	['p', row[inds[:index]]],	# fake barcode -- to be corrected at 1st checkout
-	['y', 'BK']))			# assume item type is book -- how are DVDs cataloged?
-      writer.write(record)
+      convertmovie(row, inds, dryrun, use_z3950, locs, writer)
     end
   end
 end
