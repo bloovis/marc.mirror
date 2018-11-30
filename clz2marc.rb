@@ -8,7 +8,6 @@ require 'csv'
 require 'marc'
 require 'zoom'
 
-
 # Attempt to fetch a MARC record for a given ISBN from a
 # Z39.50 server.  If found, return it as a MARC::Record object;
 # otherwise return nil.
@@ -89,7 +88,7 @@ end
 # Column names indexed by a symbol that will be used
 # as an index to inds.
 
-columns = {
+book_columns = {
   author:	"Author",
   title:	"Title",
   publisher:	"Publisher",
@@ -110,6 +109,17 @@ columns = {
   purchdate:	"Purchase Date",
   price:	"Purchase Price",
   index:	"Index"		# Only used to generate fake barcode for testing
+}
+
+movie_columns = {
+  title:	"Title",
+  release:	"Release Date",
+  genre:	"Genre",
+  runtime:	"Runtime",
+  director:	"Director",
+  format:	"Format",
+  distributor:	"Distributor",
+  date:		"Added Date"
 }
 
 # Indices into a data row, indexed by column symbol.
@@ -133,7 +143,7 @@ inds = {}
 locs = {
   'AB'  => 'A',		# Audio Books
   'BB'  => 'J',		# Board Book
-  'B'   => 'A',		# Biography & Memior
+  'B'   => 'A',		# Biography & Memoir
   'E'   => 'J',		# New Readers
   'F'   => 'A',		# Adult Fiction
   'JF'  => 'J',		# Juvenile Fiction
@@ -145,10 +155,18 @@ locs = {
   'YA'  => 'YA'		# Young Adult Fiction
 }
 
-first = true
+book = true		# true if book catalog, false if movie catalog
+first = true		# true if reading first row in CSV file
 
 CSV.foreach(input_file) do |row|
   if first
+    if row.index('Director')
+      book = false
+      columns = movie_columns
+    else
+      book = true
+      columns = book_columns
+    end
     columns.each do |key, value|
       ind = row.index(value)
       if ind
@@ -180,9 +198,10 @@ CSV.foreach(input_file) do |row|
 	  ['a', isbn]))
 
 	# Author
+	author = row[inds[:author]]
 	record.append(MARC::DataField.new(
 	  '100','0',' ',
-	  ['a', row[inds[:author]]]))
+	  ['a', author]))
 
 	# Title/Subtitle
 	title = row[inds[:title]]
@@ -193,11 +212,15 @@ CSV.foreach(input_file) do |row|
 
         # Library of Congress classification
 	lcclass = row[inds[:lcclass]]
-	classno, cutters = lcclass.split(' ', 2)
-	record.append(MARC::DataField.new(
-	  '50','0','0',
-	  ['a', classno],
-	  ['b', cutters]))
+	if lcclass
+	  classno, cutters = lcclass.split(' ', 2)
+	  record.append(MARC::DataField.new(
+	    '50','0','0',
+	    ['a', classno],
+	    ['b', cutters]))
+	else
+	  # puts "Nil lcclass for #{title}"
+	end
 
 	# Library of Congress control number
 	lcno = row[inds[:lccontrol]]
@@ -223,6 +246,8 @@ CSV.foreach(input_file) do |row|
 	  ['b', publisher],
 	  ['c', pubdate]))
 
+	# Get genre field
+	genre = row[inds[:genre]]
       end
 
       # Determine Koha holding information.
@@ -240,6 +265,7 @@ CSV.foreach(input_file) do |row|
       # Use the first word as an index to the locs hash,
       # which gets us the collection code.
       loc = row[inds[:location]]
+      location = ''
       if loc =~ /^(\w+) (.*)/
 	location = $1
 	remainder = $2
@@ -247,15 +273,123 @@ CSV.foreach(input_file) do |row|
 	unless collection
 	  puts "Unrecognized location #{location} for #{title}"
         end
-	# Special case for "P", which is used for Picture Books and Poetry.
+	# Special case for "P", which is (mistakenly?) used for
+	# both Picture Books and Poetry.
 	if location == 'P'
 	  if remainder =~ /Picture/
-	    location = 'PIC'
+	    location = 'P'
 	    collection = 'J'
+	  else
+	    location = 'PO'
+	    collection = 'A'
 	  end
 	end
       else
 	puts "Invalid location #{location} for #{title}"
+      end
+
+      # Calculate a three-character upper-case abbreviation of the title, without
+      # a leading "the" or "a".
+      title3 = ''
+      if title
+	if title =~ /^(the |a )?(.*)/i
+	  title3 = $2[0..2].upcase
+	else
+	  title3 = title[0..2].upcase
+	end
+      end
+
+      # Somehow determine the surname so we can figure what is
+      # on the spine tag, hence in the call number.  Unfortuately,
+      # the author field in collectorz doesn't put the surname first,
+      # and it can look like any of the following:
+      #   Peter Ackroyd
+      #   David A. Aguilar
+      #   Georgina Andrews, Kate Knighton
+      #   The Metropolitan Museum of Art, N.Y. New York
+      #   <empty string>
+      author3 = ''
+      if author
+	authors = author.split(',')
+	firstauthor = authors[0]
+	if firstauthor
+	  surname = firstauthor.split[-1]
+	  author3 = surname[0..2].upcase
+	end
+      end
+
+      # Determine the three-letter movie genre abbreviation for use
+      # in the call number (spine tag).  Unfortunately, the genre
+      # field can contain multiple genres, apparently in alphabetical order.
+      # Some examples:
+      #   Action, Adventure, Biography, Drama, History, Music, Romance, War
+      #   Action, Adventure, Animation, Anime, Drama, Fantasy, Mystery, Science Fiction, Thriller
+      #   Comedy, Drama, History
+      # There is no obvious way to determine the genre tag
+      # in actual use.  Picking the first one is almost certainly
+      # going to be wrong, because the alphabetical order means
+      # that Action would always win out over, say, Science Fiction.
+      # We could say that certain genres have priority.
+      # For example, we might prioritize them as follows:
+      #   Animation
+      #   Family
+      #   Comedy
+      # But this is completely arbitrary, and likely to be wrong most
+      # of the time.  We will just have to pick one genre somehow,
+      # and then correct it in the catalog when the item is checked
+      # out the first time (which we have to do anyway to get
+      # the correct barcode into the catalog).
+      genre3 = ''
+      if genre
+	genres = genre.split(/\s*,\s*/)
+	if genres.index('Animation')
+	  genre3 = 'ANI'
+	elsif genres.index('Family')
+	  genre3 = 'FAM'
+	elsif genres.index('Comedy')
+	  genre3 = 'COM'
+	elsif genres.index('Science Fiction')
+	  genre3 = 'SCI'
+	else
+	  firstgenre = genres[0]
+	  if firstgenre
+	    genre3 = firstgenre[0..2].upcase
+	  end
+	end
+      end
+
+      # Get Dewey number
+      dewey = row[inds[:dewey]] || ''
+
+      # Determine the call number (found on the spine tag).
+      if location
+	call = location + ' '
+	case location
+	when 'DVD'
+	  call += genre + ' ' + title3
+	when 'F'
+	  call += author3
+	when 'B'
+	  call += author3
+	when 'NF'
+	  call += dewey + ' ' + author3
+	when 'P'
+	  call += author3
+	when 'E'
+	  call += author3
+	when 'BB'
+	  call += author3
+	when 'JF'
+	  call += author3
+	when 'YA'
+	  call += author3
+	when 'JNF'
+	  call += dewey + ' ' + author3
+	when 'AB'
+	  call += author3
+	end
+      else
+	call = ''
       end
 
       # Append Koha holding information.
@@ -267,8 +401,8 @@ CSV.foreach(input_file) do |row|
 	['b', 'RCML'],
         ['c', location],
 	['d', datestr],
-	['o', row[inds[:dewey]]],	# have to figure out correct value for fiction, kids, etc.
-	['p', row[inds[:index]]],	# fake barcode -- to be corrected at 1st checkout
+	['o', call],
+#	['p', row[inds[:index]]],	# fake barcode -- to be corrected at 1st checkout
 	['y', 'BK']))			# assume item type is book -- how are DVDs cataloged?
       writer.write(record)
     end
