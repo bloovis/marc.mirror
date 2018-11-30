@@ -1,7 +1,8 @@
 #!/usr/bin/ruby
 
 # This script reads a web page, saved locally from a "MARC View" page
-# in bpl.bibliocommons.com (Boston Public Library).
+# in bpl.bibliocommons.com (Boston Public Library), and converts
+# it to a MARC record.
 #
 # The use of this script is complicated by HTML syntax errors in the MARC 
 # View.  To avoid these errors, middle-click on the "MARC Display" link
