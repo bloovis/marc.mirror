@@ -156,40 +156,49 @@ def convertbook(row, inds, dryrun, use_z3950, locs, writer)
   if dryrun
     puts "ISBN: #{isbn} Title: #{row[inds[:title]]} Subtitle: #{row[inds[:subtitle]]} #Author: #{row[inds[:author]]}"
   else
-    record = nil
+    # Extract a few fields from the CSV line that we will need later.
+    author = row[inds[:author]]
+    title = row[inds[:title]]
+    genre = row[inds[:genre]]
+    if genre
+      genres = genre.split(/\s*,\s*/)
+    end
 
     # Try to fetch a MARC record from a Z39.50 server.
-    # If not found, create one from scratch, filling
-    # in as much as we can from the Collectorz info.
+    record = nil
     if isbn =~ /^\d+$/ && use_z3950
       record = get_z3950(isbn)
     end
 
+    # If the record can't be found with Z39.50, create one from scratch,
+    # filling in as much as we can from the Collectorz info.
     unless record
       record = MARC::Record.new
 
       # IBSN
-      record.append(MARC::DataField.new(
-	'20',' ',' ',
-	['a', isbn]))
+      if isbn
+	record.append(MARC::DataField.new(
+	  '20',' ',' ',
+	  ['a', isbn]))
+      end
 
       # Author
-      author = row[inds[:author]]
-      record.append(MARC::DataField.new(
-	'100','0',' ',
-	['a', author]))
+      if author
+	record.append(MARC::DataField.new(
+	  '100','0',' ',
+	  ['a', author]))
+      end
 
       # Title/Subtitle
-      title = row[inds[:title]]
-      record.append(MARC::DataField.new(
-	'245','0','0',
-	['a', title],
-	['b', row[inds[:subtitle]]]))
+      if title
+	record.append(MARC::DataField.new(
+	  '245','0','0',
+	  ['a', title],
+	  ['b', row[inds[:subtitle]]]))
+      end
 
-      # Get genre field.
-      genre = row[inds[:genre]]
+      # Add each genre to the record.
       if genre
-	genres = genre.split(/\s*,\s*/)
 	genres.each do |g|
 	  record.append(MARC::DataField.new(
 	    '653', ' ', '6',
@@ -211,28 +220,33 @@ def convertbook(row, inds, dryrun, use_z3950, locs, writer)
 
       # Library of Congress control number
       lcno = row[inds[:lccontrol]]
-      record.append(MARC::DataField.new(
-	'10',' ',' ',
-	['a', lcno]))
+      if lcno
+	record.append(MARC::DataField.new(
+	  '10',' ',' ',
+	  ['a', lcno]))
+      end
 
       # Pages, format, dimensions
       pages = row[inds[:pages]]
       format = row[inds[:format]]
       dimensions = row[inds[:dimensions]]
-      record.append(MARC::DataField.new(
-	'300',' ',' ',
-	['a', "#{pages} p." ],
-	['b', format ],
-	['c', dimensions]))
+      if pages
+	record.append(MARC::DataField.new(
+	  '300',' ',' ',
+	  ['a', "#{pages} p." ],
+	  ['b', format ],
+	  ['c', dimensions]))
+      end
 
       # Publisher and publication date
       publisher = row[inds[:publisher]]
       pubdate = row[inds[:pubdate]]
-      record.append(MARC::DataField.new(
-	'260',' ',' ',
-	['b', publisher],
-	['c', pubdate]))
-
+      if publisher
+	record.append(MARC::DataField.new(
+	  '260',' ',' ',
+	  ['b', publisher],
+	  ['c', pubdate]))
+      end
     end
 
     # Determine Koha holding information.
