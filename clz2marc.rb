@@ -31,7 +31,7 @@ book_columns = {
   location:	"Location",
   purchdate:	"Purchase Date",
   price:	"Purchase Price",
-  index:	"Index"		# Only used to generate fake barcode for testing
+  index:	"Index"
 }
 
 movie_columns = {
@@ -42,7 +42,12 @@ movie_columns = {
   director:	"Director",
   format:	"Format",
   distributor:	"Distributor",
-  date:		"Added Date"
+  date:		"Added Date",
+  actor:	"Actor",
+  producer:	"Producer",
+  studio:	"Studio",
+  nrdisks:	"Nr Disks",
+  index:	"Index"
 }
 
 # Indices into a data row, indexed by column symbol.
@@ -195,6 +200,17 @@ def convertbook(row, inds, dryrun, use_z3950, locs, writer)
 	  '245','0','0',
 	  ['a', title],
 	  ['b', row[inds[:subtitle]]]))
+      end
+
+      # Add each subject to the record.
+      subject = row[inds[:subject]]
+      if subject
+	subjects = subject.split(/\s*,\s*/)
+	subjects.each do |s|
+	  record.append(MARC::DataField.new(
+	    '653', ' ', '0',
+	    ['a', s.gsub(/&apos/, '')]))
+	end
       end
 
       # Add each genre to the record.
@@ -353,8 +369,7 @@ def convertbook(row, inds, dryrun, use_z3950, locs, writer)
       ['c', location],
       ['d', datestr],
       ['o', call],
-#	['p', row[inds[:index]]],	# fake barcode -- to be corrected at 1st checkout
-      ['y', 'BK']))			# assume item type is book -- how are DVDs cataloged?
+      ['y', 'BK']))
     writer.write(record)
   end
 end
@@ -385,6 +400,21 @@ def convertmovie(row, inds, dryrun, use_z3950, locs, writer)
       record.append(MARC::DataField.new(
 	'306',' ',' ',
 	['a', sprintf("%06d", runtime.to_i)]))
+    end
+
+    # Get the number of disks.
+    nrdisks = row[inds[:nrdisks]]
+    if nrdisks
+      suffix = nrdisks.to_i == 1 ? '' : 's'
+      if runtime
+	record.append(MARC::DataField.new(
+	  '300',' ',' ',
+	  ['a', sprintf("%s videodisc%s (%s min.)", nrdisks, suffix, runtime)]))
+      else
+	record.append(MARC::DataField.new(
+	  '300',' ',' ',
+	  ['a', sprintf("%s videodisc%s", nrdisks, suffix)]))
+      end
     end
 
     # Distributor and release date.  The release format is
@@ -423,6 +453,38 @@ def convertmovie(row, inds, dryrun, use_z3950, locs, writer)
 	['e', 'film director']))
     end
 
+    # Get producer.
+    producer = row[inds[:producer]]
+    if producer
+      record.append(MARC::DataField.new(
+	'508',' ',' ',
+	['a', producer]))
+    end
+
+    # Get actor(s).
+    actor = row[inds[:actor]]
+    if actor
+      record.append(MARC::DataField.new(
+	'511','1',' ',
+	['a', actor]))
+    end
+
+    # Get studio
+    studio = row[inds[:studio]]
+    if studio
+      record.append(MARC::DataField.new(
+	'710','2',' ',
+	['a', studio]))
+    end
+
+    # Get format
+    format = row[inds[:format]]
+    if format
+      record.append(MARC::DataField.new(
+	'538',' ',' ',
+	['a', format]))
+    end
+
     # Try to determine genre for spine tag. See comment in shortgenre
     # above for a discussion about why this is so error-prone.
     if genre
@@ -444,8 +506,7 @@ def convertmovie(row, inds, dryrun, use_z3950, locs, writer)
       ['c', 'DVD'],
       ['d', datestr],
       ['o', call],
-#	['p', row[inds[:index]]],	# fake barcode -- to be corrected at 1st checkout
-      ['y', 'DVD']))			# assume item type is book -- how are DVDs cataloged?
+      ['y', 'DVD']))
     writer.write(record)
   end
 end
