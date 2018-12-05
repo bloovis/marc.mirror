@@ -34,6 +34,29 @@ book_columns = {
   index:	"Index"
 }
 
+book_columns_windows = {
+  author:	"Author",
+  title:	"Title",
+  publisher:	"Publisher",
+  pubdate:	"Publication Year",
+  date:		"Date Added",
+  dewey:	"Dewey",
+  genre:	"Genre",
+  lcclass:	"LoC Classification",
+  lccontrol:	"LoC Control Number",
+  subject:	"Subject",
+  format:	"Format",
+  isbn:		"ISBN",
+  pages:	"No. of Pages",
+  language:	"Language",
+  subtitle:	"Sub Title",
+  location:	"Location",
+  purchdate:	"Purchase Date",
+  price:	"Purchase Price",
+  index:	"Index",
+  plot:		"Plot"
+}
+
 movie_columns = {
   title:	"Title",
   release:	"Release Date",
@@ -119,6 +142,11 @@ locs = {
 }
 
 # Convert a Collectorz date into an ISO date compatible with Koha.
+# The incoming date can be either of these formats:
+#   Mon DD, YYYY
+#   MM/DD/YYYY
+# Convert these to ISO:
+#   YYYY-MM-DD
 
 def convertdate(date)
   if date =~ /^(\w\w\w) (\d\d), (\d\d\d\d)$/
@@ -127,14 +155,21 @@ def convertdate(date)
     day = $2
     year = $3
     return year + '-' + sprintf("%02d", month) + '-' + day
+  elsif date =~ /^(\d+)\/(\d+)\/(20\d\d)/
+    month = $1.to_i
+    day = $2.to_i
+    year = $3.to_i
+    return sprintf("%04d-%02d-%02d", year, month, day)
   else
     return ''
   end
 end
 
 # Determine the three-letter movie genre abbreviation for use
-# in the call number (spine tag).  Unfortunately, the genre
-# field can contain multiple genres, apparently in alphabetical order.
+# in the call number (spine tag).  Unfortunately, in CSV files exported
+# from the Collectorz web app, the genre field can contain multiple genres,
+# apparently in alphabetical order.  This problem does not occur in
+# CSV files exported from the Collectorz Windows app.
 # Some examples:
 #   Action, Adventure, Biography, Drama, History, Music, Romance, War
 #   Action, Adventure, Animation, Anime, Drama, Fantasy, Mystery, Science Fiction, Thriller
@@ -283,7 +318,12 @@ def convertbook(row, inds, dryrun, use_z3950, windows, locs, writer)
       # Pages, format, dimensions
       pages = row[inds[:pages]]
       format = row[inds[:format]]
-      dimensions = row[inds[:dimensions]]
+      dimind = inds[:dimensions]
+      if dimind
+	dimensions = diminds
+      else
+	dimensions = ''
+      end
       if pages
 	record.append(MARC::DataField.new(
 	  '300',' ',' ',
@@ -303,9 +343,20 @@ def convertbook(row, inds, dryrun, use_z3950, windows, locs, writer)
       end
     end
 
+    # Get plot (present only for Windows-produced CSV files)
+    plotind = inds[:plot]
+    if plotind
+      plot = row[plotind]
+      if plot
+	record.append(MARC::DataField.new(
+	  '520',' ',' ',
+	  ['a', plot]))
+      end
+    end
+
     # Determine Koha holding information.
 
-    # Convert date from Mon DD, YYYY to YYYY-MM-DD
+    # Convert date to ISO format.
     datestr = convertdate(row[inds[:date]])
 
     # The locations look like: JF = Juvenile Fiction
@@ -786,7 +837,7 @@ csv.each do |row|
       columns = windows ? movie_columns_windows : movie_columns
     else
       book = true
-      columns = book_columns
+      columns = windows ? book_columns_windows : book_columns
     end
     columns.each do |key, value|
       ind = row.index(value)
