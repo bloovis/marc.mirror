@@ -320,7 +320,7 @@ def convertbook(row, inds, dryrun, use_z3950, windows, locs, writer)
       format = row[inds[:format]]
       dimind = inds[:dimensions]
       if dimind
-	dimensions = diminds
+	dimensions = row[dimind]
       else
 	dimensions = ''
       end
