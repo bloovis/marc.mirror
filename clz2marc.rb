@@ -50,6 +50,25 @@ movie_columns = {
   index:	"Index"
 }
 
+# The header line produced by the Collectorz Windows app has
+# labels that differ from those produced by the web app (!).
+
+movie_columns_windows = {
+  title:	"Title",
+  release:	"Movie Release Year",
+  genre:	"Genre",
+  runtime:	"Running Time",
+  director:	"Director",
+  format:	"Format",
+  distributor:	"Distributor",
+  date:		"Purchase Date",
+  actor:	"Actor",
+  producer:	"Producer",
+  studio:	"Studio",
+  nrdisks:	"No. of Discs/Tapes",
+  index:	"Index"
+}
+
 # Indices into a data row, indexed by column symbol.
 # For example, to get the index for the dewey number,
 # use inds[:dewey].  Then, to fetch the dewew number
@@ -119,23 +138,26 @@ end
 # out the first time (which we have to do anyway to get
 # the correct barcode into the catalog).
 
-def shortgenre(genres)
-  genre3 = ''
-  if genres.index('Animation')
-    genre3 = 'ANI'
-  elsif genres.index('Family')
-    genre3 = 'FAM'
-  elsif genres.index('Comedy')
-    genre3 = 'COM'
-  elsif genres.index('Science Fiction')
-    genre3 = 'SCI'
-  else
+def shortgenre(genres, windows)
+  genre3 = nil
+  unless windows
+    if genres.index('Animation')
+      genre3 = 'ANI'
+    elsif genres.index('Family')
+      genre3 = 'FAM'
+    elsif genres.index('Comedy')
+      genre3 = 'COM'
+    elsif genres.index('Science Fiction')
+      genre3 = 'SCI'
+    end
+  end
+  unless genre3
     firstgenre = genres[0]
     if firstgenre
       genre3 = firstgenre[0..2].upcase
     end
   end
-  return genre3
+  return genre3 || ''
 end
 
 # Calculate a three-character upper-case abbreviation of the title, without
@@ -156,7 +178,7 @@ end
 # Convert a row from a CSV book catalog to a Koha-compatible
 # MARC record.
 
-def convertbook(row, inds, dryrun, use_z3950, locs, writer)
+def convertbook(row, inds, dryrun, use_z3950, windows, locs, writer)
   isbn = row[inds[:isbn]]
   if dryrun
     puts "ISBN: #{isbn} Title: #{row[inds[:title]]} Subtitle: #{row[inds[:subtitle]]} #Author: #{row[inds[:author]]}"
@@ -322,7 +344,7 @@ def convertbook(row, inds, dryrun, use_z3950, locs, writer)
 
     # Get genre abbreviation.
     if genre
-      genre3 = shortgenre(genres)
+      genre3 = shortgenre(genres, windows)
     end
 
     # Get Dewey number.
@@ -377,7 +399,7 @@ end
 # Convert a row from a CSV movie catalog to a Koha-compatible
 # MARC record.
 
-def convertmovie(row, inds, dryrun, use_z3950, locs, writer)
+def convertmovie(row, inds, dryrun, windows, writer)
   if dryrun
     puts "Title: #{row[inds[:title]]} Release: #{row[inds[:release]]} Genre: #{row[inds[:genre]]}"
     puts "  Runtime: #{row[inds[:runtime]]} Director: #{row[inds[:director]]} Format #{row[inds[:format]]}"
@@ -488,7 +510,7 @@ def convertmovie(row, inds, dryrun, use_z3950, locs, writer)
     # Try to determine genre for spine tag. See comment in shortgenre
     # above for a discussion about why this is so error-prone.
     if genre
-      genre3 = shortgenre(genres)
+      genre3 = shortgenre(genres, windows)
     end
 
     # Fabricate a call number.
@@ -549,6 +571,8 @@ end
 dryrun = false		# Can be set to true by -n option
 overwrite = false	# Can be set to true by -o option
 use_z3950 = false	# Can be set to true by -z option
+windows = false		# Can be set to true by -w option
+col_sep = ','		# Can be set to semicolon by -z option
 
 book = true		# true if book catalog, false if movie catalog
 first = true		# true if reading first row in CSV file
@@ -565,6 +589,12 @@ ARGV.each do |arg|
   elsif arg == '-z'
     use_z3950 = true
     nopts += 1
+  elsif arg == '-w'
+    windows = true
+    nopts += 1
+  elsif arg == '-s'
+    col_sep = ';'
+    nopts += 1
   else
     break
   end
@@ -577,6 +607,8 @@ if ARGV.length < 2
    puts "  -n : don't write outfile, just print records from inputfile.csv"
    puts "  -o : overwrite existing output file"
    puts "  -z : use Z39.50 servers to fetch bib record"
+   puts "  -s : CSV file uses semicolon separator instead of comma"
+   puts "  -w : CSV file was produced by Collectorz Windows app"
    exit 1
 end
 
@@ -592,13 +624,26 @@ unless dryrun
   writer = MARC::Writer.new(output_file)
 end
 
-CSV.foreach(input_file) do |row|
+# Create a CSV file object, telling it the column separator character.
+f = File.open(input_file, "r")
+unless f
+  puts "Unable to open #{input_file}"
+  exit 1
+end
+
+csv = CSV.new(f, col_sep: col_sep)
+unless csv
+  puts "Unable to create a CSV object for #{input_file}"
+  exit 1
+end
+
+csv.each do |row|
   # The first row contains column headers, from which we determine
   # whether we're reading a book catalog or a movie catalog.
   if first
     if row.index('Director')
       book = false
-      columns = movie_columns
+      columns = windows ? movie_columns_windows : movie_columns
     else
       book = true
       columns = book_columns
@@ -615,9 +660,9 @@ CSV.foreach(input_file) do |row|
     first = false
   else
     if book
-      convertbook(row, inds, dryrun, use_z3950, locs, writer)
+      convertbook(row, inds, dryrun, use_z3950, windows, locs, writer)
     else
-      convertmovie(row, inds, dryrun, use_z3950, locs, writer)
+      convertmovie(row, inds, dryrun, windows, writer)
     end
   end
 end
