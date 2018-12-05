@@ -47,7 +47,11 @@ movie_columns = {
   producer:	"Producer",
   studio:	"Studio",
   nrdisks:	"Nr Disks",
-  index:	"Index"
+  index:	"Index",
+  rating:	"Audience Rating",
+  edition:	"Edition",
+  color:	"Color",
+  region:	"Region"
 }
 
 # The header line produced by the Collectorz Windows app has
@@ -66,7 +70,19 @@ movie_columns_windows = {
   producer:	"Producer",
   studio:	"Studio",
   nrdisks:	"No. of Discs/Tapes",
-  index:	"Index"
+  index:	"Index",
+  plot:		"Plot",
+  trailer:	"Trailer URLs",
+  edition:	"Edition",
+  cine:		"Cinematography",
+  music:	"Musician",
+  writer:	"Writer",
+  extras:	"Extra Features",
+  ratio:	"Screen Ratio",
+  rating:	"Audience Rating",
+  color:	"Color",
+  layers:	"Layers",
+  region:	"Region"
 }
 
 # Indices into a data row, indexed by column symbol.
@@ -342,11 +358,6 @@ def convertbook(row, inds, dryrun, use_z3950, windows, locs, writer)
       end
     end
 
-    # Get genre abbreviation.
-    if genre
-      genre3 = shortgenre(genres, windows)
-    end
-
     # Get Dewey number.
     dewey = row[inds[:dewey]] || ''
 
@@ -354,8 +365,6 @@ def convertbook(row, inds, dryrun, use_z3950, windows, locs, writer)
     if location
       call = location + ' '
       case location
-      when 'DVD'
-	call += genre + ' ' + title3
       when 'F'
 	call += author3
       when 'B'
@@ -419,6 +428,7 @@ def convertmovie(row, inds, dryrun, windows, writer)
     # Get the run time.
     runtime = row[inds[:runtime]]
     if runtime
+      runtime.gsub!(/ mins/, '')
       record.append(MARC::DataField.new(
 	'306',' ',' ',
 	['a', sprintf("%06d", runtime.to_i)]))
@@ -428,14 +438,31 @@ def convertmovie(row, inds, dryrun, windows, writer)
     nrdisks = row[inds[:nrdisks]]
     if nrdisks
       suffix = nrdisks.to_i == 1 ? '' : 's'
-      if runtime
-	record.append(MARC::DataField.new(
+      if runtime && runtime.length > 0
+	field = MARC::DataField.new(
 	  '300',' ',' ',
-	  ['a', sprintf("%s videodisc%s (%s min.)", nrdisks, suffix, runtime)]))
+	  ['a', sprintf("%s videodisc%s (%s min.)", nrdisks, suffix, runtime)])
       else
-	record.append(MARC::DataField.new(
+	field = MARC::DataField.new(
 	  '300',' ',' ',
-	  ['a', sprintf("%s videodisc%s", nrdisks, suffix)]))
+	  ['a', sprintf("%s videodisc%s", nrdisks, suffix)])
+      end
+      # Get color.
+      color = row[inds[:color]]
+      if color
+	field.append(MARC::Subfield.new('b', color))
+      end
+      record.append(field)
+    end
+
+    # Get genre(s).
+    genre = row[inds[:genre]]
+    if genre
+      genres = genre.split(/\s*,\s*/)
+      genres.each do |g|
+	record.append(MARC::DataField.new(
+	  '653', ' ', '6',
+	  ['a', g.gsub(/&apos/, '')]))
       end
     end
 
@@ -468,16 +495,52 @@ def convertmovie(row, inds, dryrun, windows, writer)
 
     # Get director.
     director = row[inds[:director]]
-    if director
+    if director && director.length > 0
       record.append(MARC::DataField.new(
 	'700','1',' ',
 	['a', director],
 	['e', 'film director']))
     end
 
+    # Get writer
+    screenwriterind = inds[:writer]
+    if screenwriterind
+      screenwriter = row[screenwriterind]
+      if screenwriter && screenwriter.length > 0
+	record.append(MARC::DataField.new(
+	  '700','1',' ',
+	  ['a', screenwriter],
+	  ['e', 'screenwriter']))
+      end
+    end
+
+    # Get cinematographer.
+    cineind = inds[:cine]
+    if cineind
+      cine = row[cineind]
+      if cine && cine.length > 0
+	record.append(MARC::DataField.new(
+	  '700','1',' ',
+	  ['a', cine],
+	  ['e', 'cinematographer']))
+      end
+    end
+
+    # Get musician.
+    musicind = inds[:music]
+    if musicind
+      music = row[musicind]
+      if music && music.length > 0
+	record.append(MARC::DataField.new(
+	  '700','1',' ',
+	  ['a', music],
+	  ['e', 'musician']))
+      end
+    end
+
     # Get producer.
     producer = row[inds[:producer]]
-    if producer
+    if producer && producer.length > 0
       record.append(MARC::DataField.new(
 	'508',' ',' ',
 	['a', producer]))
@@ -499,12 +562,89 @@ def convertmovie(row, inds, dryrun, windows, writer)
 	['a', studio]))
     end
 
-    # Get format
+    # Get format (and optional regions, layers, and screen ratio).
     format = row[inds[:format]]
     if format
+      region = row[inds[:region]]
+      if region && region.length > 0
+	format += '; ' + region
+      end
+      layersind = inds[:layers]
+      if layersind
+	layers = row[layersind]
+	if layers && layers.length > 0 && layers != 'N/A'
+	  format += '; ' + layers
+	end
+      end
+      ratioind = inds[:ratio]
+      if ratioind
+	ratio = row[ratioind]
+	if ratio && ratio.length > 0
+	  format += '; ' + ratio
+	end
+      end
       record.append(MARC::DataField.new(
 	'538',' ',' ',
 	['a', format]))
+    end
+
+    # Get plot (present only for Windows-produced CSV files)
+    plotind = inds[:plot]
+    if plotind
+      plot = row[plotind]
+      if plot
+	record.append(MARC::DataField.new(
+	  '520',' ',' ',
+	  ['a', plot]))
+      end
+    end
+
+    # Get special features (present only for Windows-produced CSV files)
+    extraind = inds[:extras]
+    if extraind
+      extra = row[extraind]
+      if extra && extra.length > 0
+	record.append(MARC::DataField.new(
+	  '500',' ',' ',
+	  ['a', 'Extra features: ' + extra]))
+      end
+    end
+
+    # Get trailer URLS (present only for Windows-produced CSV files)
+    trailerind = inds[:trailer]
+    if trailerind
+      trailer = row[trailerind]
+      if trailer
+	trailers = trailer.split(/\s*;\s*/)
+	trailers.each do |t|
+	  record.append(MARC::DataField.new(
+	    '856','4',' ',
+	    ['u', t],
+	    ['y', 'Trailer video']))
+	end
+      end
+    end
+
+    # Get edition.
+    editionind = inds[:edition]
+    if editionind
+      edition = row[editionind]
+      if edition && edition.length > 0
+	record.append(MARC::DataField.new(
+	  '250',' ',' ',
+	  ['a', edition]))
+      end
+    end
+
+    # Get audience rating.
+    ratingind = inds[:rating]
+    if ratingind
+      rating = row[ratingind]
+      if rating && rating.length > 0
+	record.append(MARC::DataField.new(
+	  '521','8',' ',
+	  ['a', 'MPAA rating: ' + rating]))
+      end
     end
 
     # Try to determine genre for spine tag. See comment in shortgenre
