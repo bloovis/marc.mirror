@@ -239,7 +239,11 @@ def convertbook(row, inds, dryrun, use_z3950, windows, locs, writer)
     title = row[inds[:title]]
     genre = row[inds[:genre]]
     if genre
-      genres = genre.split(/\s*,\s*/)
+      if windows
+	genres = genre.split(/\s*;\s*/)
+      else
+	genres = genre.split(/\s*,\s*/)
+      end
     end
 
     # Try to fetch a MARC record from a Z39.50 server.
@@ -269,20 +273,28 @@ def convertbook(row, inds, dryrun, use_z3950, windows, locs, writer)
 
       # Title/Subtitle
       if title
-	record.append(MARC::DataField.new(
+	field = MARC::DataField.new(
 	  '245','0','0',
-	  ['a', title],
-	  ['b', row[inds[:subtitle]]]))
+	  ['a', title])
+	subtitle = row[inds[:subtitle]]
+	if subtitle && subtitle.length > 0
+	  field.append(MARC::Subfield.new('b', subtitle))
+	end
+	record.append(field)
       end
 
       # Add each subject to the record.
       subject = row[inds[:subject]]
       if subject
-	subjects = subject.split(/\s*,\s*/)
+	if windows
+	  subjects = subject.split(/\s*;\s*/)
+	else
+	  subjects = subject.split(/\s*,\s*/)
+	end
 	subjects.each do |s|
 	  record.append(MARC::DataField.new(
 	    '653', ' ', '0',
-	    ['a', s.gsub(/&apos/, '')]))
+	    ['a', s.gsub(/\s?(&apos|&amp)/, '')]))
 	end
       end
 
@@ -291,7 +303,7 @@ def convertbook(row, inds, dryrun, use_z3950, windows, locs, writer)
 	genres.each do |g|
 	  record.append(MARC::DataField.new(
 	    '653', ' ', '6',
-	    ['a', g.gsub(/&apos/, '')]))
+	    ['a', g.gsub(/\s?(&apos|&amp)/, '')]))
 	end
       end
 
