@@ -226,13 +226,20 @@ def shorttitle(title)
   return title3
 end
 
+# Fix a couple of spurious HTML entities that found their way into
+# various fields in the CSV file.
+
+def fixentities(s)
+  return s.gsub(/&apos;?/, "'").gsub(/&amp;/, '&')
+end
+
 # Convert a row from a CSV book catalog to a Koha-compatible
 # MARC record.
 
 def convertbook(row, inds, dryrun, use_z3950, windows, locs, writer)
   isbn = row[inds[:isbn]]
   if dryrun
-    puts "ISBN: #{isbn} Title: #{row[inds[:title]]} Subtitle: #{row[inds[:subtitle]]} #Author: #{row[inds[:author]]}"
+    puts "ISBN: #{isbn} Title: #{row[inds[:title]]} Subtitle: #{row[inds[:subtitle]]} Author: #{row[inds[:author]]}"
   else
     # Extract a few fields from the CSV line that we will need later.
     author = row[inds[:author]]
@@ -258,21 +265,21 @@ def convertbook(row, inds, dryrun, use_z3950, windows, locs, writer)
       record = MARC::Record.new
 
       # IBSN
-      if isbn
+      if isbn && isbn.length > 0
 	record.append(MARC::DataField.new(
 	  '20',' ',' ',
 	  ['a', isbn]))
       end
 
       # Author
-      if author
+      if author && author.length > 0
 	record.append(MARC::DataField.new(
 	  '100','0',' ',
 	  ['a', author]))
       end
 
       # Title/Subtitle
-      if title
+      if title && title.length > 0
 	field = MARC::DataField.new(
 	  '245','0','0',
 	  ['a', title])
@@ -292,36 +299,41 @@ def convertbook(row, inds, dryrun, use_z3950, windows, locs, writer)
 	  subjects = subject.split(/\s*,\s*/)
 	end
 	subjects.each do |s|
+	  s2 = fixentities(s)
 	  record.append(MARC::DataField.new(
 	    '653', ' ', '0',
-	    ['a', s.gsub(/\s?(&apos|&amp)/, '')]))
+	    ['a', s2]))
 	end
       end
 
       # Add each genre to the record.
       if genre
 	genres.each do |g|
+	  g2 = fixentities(g)
 	  record.append(MARC::DataField.new(
 	    '653', ' ', '6',
-	    ['a', g.gsub(/\s?(&apos|&amp)/, '')]))
+	    ['a', g2]))
 	end
       end
 
       # Library of Congress classification
       lcclass = row[inds[:lcclass]]
-      if lcclass
+      if lcclass && lcclass.length > 0
 	classno, cutters = lcclass.split(' ', 2)
-	record.append(MARC::DataField.new(
+	field = MARC::DataField.new(
 	  '50','0','0',
-	  ['a', classno],
-	  ['b', cutters]))
+	  ['a', classno])
+        if cutters && cutters.length > 0
+	  field.append(MARC::Subfield.new('b', cutters))
+	end
+	record.append(field)
       else
 	# puts "Nil lcclass for #{title}"
       end
 
       # Library of Congress control number
       lcno = row[inds[:lccontrol]]
-      if lcno
+      if lcno && lcno.length > 0
 	record.append(MARC::DataField.new(
 	  '10',' ',' ',
 	  ['a', lcno]))
@@ -336,22 +348,30 @@ def convertbook(row, inds, dryrun, use_z3950, windows, locs, writer)
       else
 	dimensions = ''
       end
-      if pages
-	record.append(MARC::DataField.new(
+      if pages && pages.length > 0
+	field = MARC::DataField.new(
 	  '300',' ',' ',
-	  ['a', "#{pages} p." ],
-	  ['b', format ],
-	  ['c', dimensions]))
+	  ['a', "#{pages} p." ])
+	if format && format.length > 0
+	  field.append(MARC::Subfield.new('b', format))
+	end
+	if dimensions && dimensions.length > 0
+	  field.append(MARC::Subfield.new('b', dimensions))
+	end
+	record.append(field)
       end
 
       # Publisher and publication date
       publisher = row[inds[:publisher]]
       pubdate = row[inds[:pubdate]]
-      if publisher
-	record.append(MARC::DataField.new(
+      if publisher && publisher.length > 0
+	field = MARC::DataField.new(
 	  '260',' ',' ',
-	  ['b', publisher],
-	  ['c', pubdate]))
+	  ['b', publisher])
+	if pubdate && pubdate.length > 0
+	  field.append(MARC::Subfield.new('c', pubdate))
+	end
+	record.append(field)
       end
     end
 
@@ -359,7 +379,7 @@ def convertbook(row, inds, dryrun, use_z3950, windows, locs, writer)
     plotind = inds[:plot]
     if plotind
       plot = row[plotind]
-      if plot
+      if plot && plot.length > 0
 	record.append(MARC::DataField.new(
 	  '520',' ',' ',
 	  ['a', plot]))
@@ -481,16 +501,20 @@ def convertmovie(row, inds, dryrun, windows, writer)
 
     # Title
     title = row[inds[:title]]
-    record.append(MARC::DataField.new(
-      '245','0','0',
-      ['a', title]))
+    if title && title.length > 0
+      record.append(MARC::DataField.new(
+	'245','0','0',
+	['a', title]))
+    else
+      puts "Movie added #{row[inds[:date]]} has no title!"
+    end
 
     # Get the title abbreviation.
     title3 = shorttitle(title)
 
     # Get the run time.
     runtime = row[inds[:runtime]]
-    if runtime
+    if runtime && runtime.length > 0
       runtime.gsub!(/ mins/, '')
       record.append(MARC::DataField.new(
 	'306',' ',' ',
@@ -499,7 +523,7 @@ def convertmovie(row, inds, dryrun, windows, writer)
 
     # Get the number of disks.
     nrdisks = row[inds[:nrdisks]]
-    if nrdisks
+    if nrdisks && nrdisks.length > 0
       suffix = nrdisks.to_i == 1 ? '' : 's'
       if runtime && runtime.length > 0
 	field = MARC::DataField.new(
@@ -512,7 +536,7 @@ def convertmovie(row, inds, dryrun, windows, writer)
       end
       # Get color.
       color = row[inds[:color]]
-      if color
+      if color && color.length > 0
 	field.append(MARC::Subfield.new('b', color))
       end
       record.append(field)
@@ -520,12 +544,13 @@ def convertmovie(row, inds, dryrun, windows, writer)
 
     # Get genre(s).
     genre = row[inds[:genre]]
-    if genre
+    if genre && genre.length > 0
       genres = genre.split(/\s*,\s*/)
       genres.each do |g|
+        g2 = fixentities(g)
 	record.append(MARC::DataField.new(
 	  '653', ' ', '6',
-	  ['a', g.gsub(/&apos/, '')]))
+	  ['a', g2]))
       end
     end
 
@@ -543,17 +568,6 @@ def convertmovie(row, inds, dryrun, windows, writer)
 	'260',' ',' ',
 	['b', distributor],
 	['c', release]))
-    end
-
-    # Get genre(s).
-    genre = row[inds[:genre]]
-    if genre
-      genres = genre.split(/\s*,\s*/)
-      genres.each do |g|
-	record.append(MARC::DataField.new(
-	  '653', ' ', '6',
-	  ['a', g.gsub(/&apos/, '')]))
-      end
     end
 
     # Get director.
@@ -611,7 +625,7 @@ def convertmovie(row, inds, dryrun, windows, writer)
 
     # Get actor(s).
     actor = row[inds[:actor]]
-    if actor
+    if actor && actor.length > 0
       record.append(MARC::DataField.new(
 	'511','1',' ',
 	['a', actor]))
@@ -619,7 +633,7 @@ def convertmovie(row, inds, dryrun, windows, writer)
 
     # Get studio
     studio = row[inds[:studio]]
-    if studio
+    if studio && studio.length > 0
       record.append(MARC::DataField.new(
 	'710','2',' ',
 	['a', studio]))
@@ -627,7 +641,7 @@ def convertmovie(row, inds, dryrun, windows, writer)
 
     # Get format (and optional regions, layers, and screen ratio).
     format = row[inds[:format]]
-    if format
+    if format && format.length > 0
       region = row[inds[:region]]
       if region && region.length > 0
 	format += '; ' + region
@@ -655,7 +669,7 @@ def convertmovie(row, inds, dryrun, windows, writer)
     plotind = inds[:plot]
     if plotind
       plot = row[plotind]
-      if plot
+      if plot && plot.length > 0
 	record.append(MARC::DataField.new(
 	  '520',' ',' ',
 	  ['a', plot]))
@@ -677,7 +691,7 @@ def convertmovie(row, inds, dryrun, windows, writer)
     trailerind = inds[:trailer]
     if trailerind
       trailer = row[trailerind]
-      if trailer
+      if trailer && trailer.length > 0
 	trailers = trailer.split(/\s*;\s*/)
 	trailers.each do |t|
 	  record.append(MARC::DataField.new(
