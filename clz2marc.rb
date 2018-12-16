@@ -230,7 +230,7 @@ end
 # various fields in the CSV file.
 
 def fixentities(s)
-  return s.gsub(/&apos;?/, "'").gsub(/&amp;/, '&')
+  return s.gsub(/&apos;?/, "'").gsub(/&amp;?/, '&')
 end
 
 # Convert a row from a CSV book catalog to a Koha-compatible
@@ -251,6 +251,34 @@ def convertbook(row, inds, dryrun, use_z3950, windows, locs, writer)
       else
 	genres = genre.split(/\s*,\s*/)
       end
+    end
+
+    # The locations look like: JF = Juvenile Fiction
+    # Use the first word as an index to the locs hash,
+    # which gets us the collection code.
+    loc = row[inds[:location]]
+    location = ''
+    if loc =~ /^(\w+) (.*)/
+      location = $1
+      remainder = $2
+      collection = locs[location]
+      unless collection
+	puts "Unrecognized location #{location} for #{title}"
+      end
+
+      # Special case for "P", which is (mistakenly?) used for
+      # both Picture Books and Poetry.
+      if location == 'P'
+	if remainder =~ /Picture/
+	  location = 'P'
+	  collection = 'J'
+	else
+	  location = 'PO'
+	  collection = 'A'
+	end
+      end
+    else
+      puts "Invalid location #{location} for #{title}"
     end
 
     # Try to fetch a MARC record from a Z39.50 server.
@@ -286,6 +314,9 @@ def convertbook(row, inds, dryrun, use_z3950, windows, locs, writer)
 	subtitle = row[inds[:subtitle]]
 	if subtitle && subtitle.length > 0
 	  field.append(MARC::Subfield.new('b', subtitle))
+	end
+	if location == 'LP'
+	  field.append(MARC::Subfield.new('h', 'large print'))
 	end
 	record.append(field)
       end
@@ -365,9 +396,10 @@ def convertbook(row, inds, dryrun, use_z3950, windows, locs, writer)
       publisher = row[inds[:publisher]]
       pubdate = row[inds[:pubdate]]
       if publisher && publisher.length > 0
+	p2 = fixentities(publisher)
 	field = MARC::DataField.new(
 	  '260',' ',' ',
-	  ['b', publisher])
+	  ['b', p2])
 	if pubdate && pubdate.length > 0
 	  field.append(MARC::Subfield.new('c', pubdate))
 	end
@@ -386,38 +418,21 @@ def convertbook(row, inds, dryrun, use_z3950, windows, locs, writer)
       end
     end
 
+    # Get Dewey number.
+    dewey = row[inds[:dewey]]
+    if dewey && dewey.length > 0
+	record.append(MARC::DataField.new(
+	  '82','0','4',
+	  ['a', dewey],
+	  ['2', '22']))
+    else
+      dewey = ''
+    end
+
     # Determine Koha holding information.
 
     # Convert date to ISO format.
     datestr = convertdate(row[inds[:date]])
-
-    # The locations look like: JF = Juvenile Fiction
-    # Use the first word as an index to the locs hash,
-    # which gets us the collection code.
-    loc = row[inds[:location]]
-    location = ''
-    if loc =~ /^(\w+) (.*)/
-      location = $1
-      remainder = $2
-      collection = locs[location]
-      unless collection
-	puts "Unrecognized location #{location} for #{title}"
-      end
-
-      # Special case for "P", which is (mistakenly?) used for
-      # both Picture Books and Poetry.
-      if location == 'P'
-	if remainder =~ /Picture/
-	  location = 'P'
-	  collection = 'J'
-	else
-	  location = 'PO'
-	  collection = 'A'
-	end
-      end
-    else
-      puts "Invalid location #{location} for #{title}"
-    end
 
     # Get Title abbreviation.
     title3 = shorttitle(title)
@@ -440,9 +455,6 @@ def convertbook(row, inds, dryrun, use_z3950, windows, locs, writer)
 	author3 = surname[0..2].upcase
       end
     end
-
-    # Get Dewey number.
-    dewey = row[inds[:dewey]] || ''
 
     # Determine the call number (found on the spine tag).
     if location
@@ -504,7 +516,8 @@ def convertmovie(row, inds, dryrun, windows, writer)
     if title && title.length > 0
       record.append(MARC::DataField.new(
 	'245','0','0',
-	['a', title]))
+	['a', title],
+	['h', 'videorecording']))
     else
       puts "Movie added #{row[inds[:date]]} has no title!"
     end
