@@ -480,6 +480,8 @@ def convertbook(row, inds, dryrun, use_z3950, windows, locs, writer)
 	call += dewey + ' ' + author3
       when 'AB'
 	call += author3
+      when 'LP'
+	call += author3
       end
     else
       call = ''
@@ -779,6 +781,7 @@ def get_z3950(isbn)
     port = rec[1]
     db = rec[2]
 
+    sleep(0.5) # wait a half second to avoid overloading the server
     begin
       ZOOM::Connection.open(host, port) do |conn|
 	conn.database_name = db
@@ -786,7 +789,9 @@ def get_z3950(isbn)
 	rset = conn.search("@attr 1=7 #{isbn}")
 	if rset[0]
 	  puts "ISBN #{isbn} found at #{host}"
-	  return MARC::Record.new_from_marc(rset[0].raw)
+	  return MARC::Record.new_from_marc(rset[0].raw,
+            :external_encoding => 'utf-8',
+            :internal_encoding => 'utf-8')
 	else
 	  puts "ISBN #{isbn} not found at #{host}"
 	end
