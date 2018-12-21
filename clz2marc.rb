@@ -287,9 +287,16 @@ def convertbook(row, inds, dryrun, use_z3950, windows, locs, writer)
       record = get_z3950(isbn)
     end
 
-    # If the record can't be found with Z39.50, create one from scratch,
-    # filling in as much as we can from the Collectorz info.
-    unless record
+    zplot = ''
+    if record
+      # If the record was found with Z39.50, extract the plot summary.
+      # If the plot summary from Collectorz is shorter, we won't use it.
+      if record['520']
+	zplot = record['520']['a']
+      end
+    else
+      # If the record can't be found with Z39.50, create one from scratch,
+      # filling in as much as we can from the Collectorz info.
       record = MARC::Record.new
 
       # IBSN
@@ -407,11 +414,11 @@ def convertbook(row, inds, dryrun, use_z3950, windows, locs, writer)
       end
     end
 
-    # Get plot (present only for Windows-produced CSV files)
+    # Get plot (present only for Windows-produced CSV files).
     plotind = inds[:plot]
     if plotind
       plot = row[plotind]
-      if plot && plot.length > 0
+      if plot && plot.length > 0 && plot.length > zplot.length
 	record.append(MARC::DataField.new(
 	  '520',' ',' ',
 	  ['a', plot]))
