@@ -4,6 +4,12 @@
 # in bpl.bibliocommons.com (Boston Public Library), and converts
 # it to a MARC record.
 #
+# Despite the name of this script, it is not limited to BPL.  Any library OPAC
+# using BiblioCommons could be used as a source; another example
+# is the Chicago Public Library.  The full list of US libraries is here:
+#
+#  https://www.bibliocommons.com/about/libraries/united-states
+#
 # The use of this script is complicated by HTML syntax errors in the MARC 
 # View.  To avoid these errors, middle-click on the "MARC Display" link
 # when viewing the "Full Record" tab of a book detail page.  This opens
