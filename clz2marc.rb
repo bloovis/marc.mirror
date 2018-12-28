@@ -233,6 +233,15 @@ def fixentities(s)
   return s.gsub(/&apos;?/, "'").gsub(/&amp;?/, '&')
 end
 
+# Return a Field 008 string that gives the publication year
+# but little else.
+
+def field008(year)
+  d = DateTime.now
+  return d.strftime("%y%m%d") + 's' + year + '    ' + 'xx ' +
+         ' ' * 17 + '    d'
+end
+
 # Convert a row from a CSV book catalog to a Koha-compatible
 # MARC record.
 
@@ -400,17 +409,24 @@ def convertbook(row, inds, dryrun, use_z3950, windows, locs, writer)
       end
 
       # Publisher and publication date
-      publisher = row[inds[:publisher]]
-      pubdate = row[inds[:pubdate]]
-      if publisher && publisher.length > 0
-	p2 = fixentities(publisher)
-	field = MARC::DataField.new(
-	  '260',' ',' ',
-	  ['b', p2])
-	if pubdate && pubdate.length > 0
+      publisher = row[inds[:publisher]] || ''
+      pubdate = row[inds[:pubdate]] || ''
+      if publisher.length > 0 || pubdate.length > 0
+        field = MARC::DataField.new('260',' ','1')
+	if publisher.length > 0
+	  p2 = fixentities(publisher)
+	  field.append(MARC::Subfield.new('b', p2))
+	end
+	if pubdate.length > 0
 	  field.append(MARC::Subfield.new('c', pubdate))
 	end
 	record.append(field)
+
+	# Add 008 control field to encode publication date.
+	if pubdate.length == 4
+	  field = MARC::ControlField.new('008', field008(pubdate))
+	  record.append(field)
+	end
       end
     end
 
@@ -463,7 +479,9 @@ def convertbook(row, inds, dryrun, use_z3950, windows, locs, writer)
       end
     end
 
-    # Determine the call number (found on the spine tag).
+    # Determine the call number (found on the spine tag),
+    # and the item type.
+    itemtype = 'BK'
     if location
       call = location + ' '
       case location
@@ -487,6 +505,7 @@ def convertbook(row, inds, dryrun, use_z3950, windows, locs, writer)
 	call += dewey + ' ' + author3
       when 'AB'
 	call += author3
+	itemtype = 'AB'
       when 'LP'
 	call += author3
       end
@@ -504,7 +523,7 @@ def convertbook(row, inds, dryrun, use_z3950, windows, locs, writer)
       ['c', location],
       ['d', datestr],
       ['o', call],
-      ['y', 'BK']))
+      ['y', itemtype]))
     writer.write(record)
   end
 end
@@ -580,16 +599,26 @@ def convertmovie(row, inds, dryrun, windows, writer)
     # inconsistent: sometimes it is a year (e.g., 2009),
     # but sometimes it is a full date (e.g., Jan 01, 2017).
     # So just take the final number as the date.
-    distributor = row[inds[:distributor]]
-    release = row[inds[:release]]
-    if distributor && release
+    distributor = row[inds[:distributor]] || ''
+    release = row[inds[:release]] || ''
+    if distributor.length > 0 || release.length > 0
       if release =~ /(\d+)$/
 	release = $1
       end
-      record.append(MARC::DataField.new(
-	'260',' ',' ',
-	['b', distributor],
-	['c', release]))
+      field = MARC::DataField.new('260',' ',' ')
+      if distributor.length > 0
+	field.append(MARC::Subfield.new('b', distributor))
+      end
+      if release.length > 0
+	field.append(MARC::Subfield.new('c', "[#{release}]"))
+      end
+      record.append(field)
+
+      # Add 008 control field to encode publication date.
+      if release.length == 4
+	field = MARC::ControlField.new('008', field008(release))
+	record.append(field)
+      end
     end
 
     # Get director.
