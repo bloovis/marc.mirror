@@ -15,8 +15,14 @@
 #    then "Web Page, Complete" in the resulting dialog, then save the page to an HTML file.
 #    Pass the full path of the HTML file to this script.
 
-require 'set'
-require 'marc'
+begin
+  require 'marc'
+rescue LoadError => exc
+  puts "Exception trying to load marc gem: #{exc}"
+  puts "Try doing this first:"
+  puts "  sudo gem install marc"
+  exit 1
+end
 require 'date'
 
 verbose = false   	# Change to true print some debugging info
@@ -70,7 +76,7 @@ public
       end
     end
     unless @kind
-      puts "Unrecognized HTML format.  Must be Evergreen, OCLC, or Bibliocommons"
+      puts "Unrecognized HTML format.  Must be Evergreen, OCLC, or BiblioCommons."
       exit 1
     end
   end
