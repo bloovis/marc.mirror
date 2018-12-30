@@ -27,7 +27,7 @@ class Converter
 private
 
   def dprint(str)
-    if @debug
+    if @verbose
       puts str
     end
   end
@@ -41,12 +41,8 @@ private
 
 public
 
-  def initialize(filename, debug=false)
-    @debug = debug
-    @attr_stack = []
-    @attrs = Set.new
-    @text = nil
-
+  def initialize(filename, verbose=false)
+    @verbose = verbose
     if filename =~ /^https?:/
       @handle = IO.popen(['wget', '-nv', '-O', '-', filename])
     else
@@ -79,7 +75,7 @@ public
     end
   end
 
-  def write_marc_evergreen(output_file, verbose)
+  def write_marc_evergreen
     inds = nil
     tag_name = nil
     tag_value = nil
@@ -90,7 +86,7 @@ public
       if row =~ /\s*<th.*>(.*)<\/th>(.*)/m
         tag_name = $1.strip
 	rest = $2
-	puts "tag_name: '#{tag_name}'" if verbose
+	dprint "tag_name: '#{tag_name}'"
 	# puts "  rest: '#{rest}'"
 	if rest =~ /(.*)<td class=\"marc_subfields\">(.*)<\/td>/m
 	  ind = $1
@@ -102,7 +98,7 @@ public
 	  indtds.each do |i|
 	    itext = i.gsub(/<span.*span>/, '')
 	    if itext.length > 0
-	      puts "   ind: '#{itext}'" if verbose
+	      dprint "   ind: '#{itext}'"
 	      inds << itext
 	    end
 	  end
@@ -113,7 +109,7 @@ public
 	    if text =~ /‡(.)/
 	      subfield_name = $1
 	      subfield_value = texts[i+1]
-	      puts "   subfield: name: '#{subfield_name}', value: '#{subfield_value}'" if verbose
+	      dprint "   subfield: name: '#{subfield_name}', value: '#{subfield_value}'"
 	      subfield = MARC::Subfield.new(subfield_name, subfield_value)
 	      field.append(subfield)
 	    end
@@ -131,7 +127,7 @@ public
     end
   end
 
-  def write_marc_biblio(output_file, verbose)
+  def write_marc_biblio
     intable = false
     tag_value_partial = nil
     inds = nil
@@ -146,25 +142,25 @@ public
 	  break
         elsif line =~ /class=\"marcTag\"><strong>(\d+)/
 	  tag_name = $1
-	  puts "Tag name: #{tag_name}" if verbose
+	  dprint "Tag name: #{tag_name}"
         elsif line =~ /class=\"marcIndicator\">(..)/
 	  inds = $1
-	  puts "  indicators: #{inds}" if verbose
+	  dprint "  indicators: #{inds}"
         elsif line =~ /class=\"marcTagData\">(.+)<\/td>/
           tag_value = $1
-          puts "  tag value: #{tag_value}" if verbose
+          dprint "  tag value: #{tag_value}"
 	elsif line =~ /class=\"marcTagData\">(.+)/
 	  tag_value_partial = $1.strip
-	  puts "  tag value partial: #{tag_value_partial}" if verbose
+	  dprint "  tag value partial: #{tag_value_partial}"
 	elsif line =~ /(.*)<\/td>$/
 	  if tag_value_partial
 	    tag_value = tag_value_partial + ' ' + $1
 	    tag_value_partial = nil
 	  end
-	  puts "  tag value: #{tag_value}" if verbose
+	  dprint "  tag value: #{tag_value}"
         elsif tag_value_partial
 	  tag_value_partial << ' ' + line.strip
-	  puts "  tag value partial: #{tag_value_partial}" if verbose
+	  dprint "  tag value partial: #{tag_value_partial}"
 	end
 	if inds && tag_name && tag_value
 	  tag_value = fixentities(tag_value)
@@ -177,7 +173,7 @@ public
 	      if subfield != ''
 		subfield_name = subfield[0]
 		subfield_value = subfield[1..-1]
-		puts "  tag subfield name: #{subfield_name}, value: #{subfield_value}" if verbose
+		dprint "  tag subfield name: #{subfield_name}, value: #{subfield_value}"
 		subfield = MARC::Subfield.new(subfield_name, subfield_value)
 		field.append(subfield)
 	      end
@@ -192,7 +188,7 @@ public
     end
   end
 
-  def write_marc_oclc(output_file, verbose)
+  def write_marc_oclc
     control_number = nil
 
     inds = nil
@@ -200,16 +196,14 @@ public
     tag_value = nil
     rows = @table.split('<tr')
     rows.each do |row|
-      # puts "Row: #{row}" if verbose
       tds = row.split('<td')
       tds.each do |t|
         td = fixentities(t)
-	# puts "td: #{td}"
         case td
         when /catexTag/
 	  if td =~ /<b>\n?(.*)<\/b>/
 	    tag_name = $1.strip
-            puts "Tag name: '#{tag_name}'" if verbose
+            dprint "Tag name: '#{tag_name}'"
 	  end
 	when /catexInds/
 	  if td =~ /\">\n?(.*)<\/td/
@@ -219,15 +213,15 @@ public
 	    else
 	      inds = inds[0..1]
 	    end
-	    puts "  td (inds): '#{td}'" if verbose
-            puts "  indicators: '#{inds}'" if verbose
+	    dprint "  td (inds): '#{td}'"
+            dprint "  indicators: '#{inds}'"
 	  end
 	when /catexData/
-	  puts "  td (data): '#{td}'" if verbose
+	  dprint "  td (data): '#{td}'"
 	  # t = td.gsub("\n", ' ').strip
 	  if td =~ /\">(.*)<\/td/m
 	    tag_value = $1.gsub(/[\r\n]+$/, '').gsub("\n", ' ').gsub(/^\s+/, '')
-            puts "  tag value: '#{tag_value}'" if verbose
+            dprint "  tag value: '#{tag_value}'"
 	  end
 	end
 	if inds && tag_name && tag_value
@@ -247,11 +241,11 @@ public
 	      @record.append(field)
 	    end
 	    if tag_name != '000'
-	      puts "ControlField: name: '#{tag_name}', value: '#{tag_value}'" if verbose
+	      dprint "ControlField: name: '#{tag_name}', value: '#{tag_value}'"
 	      field = MARC::ControlField.new(tag_name, tag_value)
 	      if tag_name == '001'
 		control_number = tag_value
-		puts "  Control number = #{tag_value}" if verbose
+		dprint "  Control number = #{tag_value}"
 	      end
 	    end
 	  else
@@ -270,21 +264,21 @@ public
 	    # First subfield doesn't have a name; assumed to be $a.
 	    field = MARC::DataField.new(tag_name, inds[0], inds[1])
 	    subfields = tag_value.split('$')
-	    subfields.each_with_index do |subfield, i|
-	      if subfield.length > 0
+	    subfields.each_with_index do |sub, i|
+	      if sub.length > 0
 		if i == 0
-		  if subfield[0] == '$'
-		    subfield_name = subfield[1]
-		    subfield_value = subfield[3..-1]
+		  if sub[0] == '$'
+		    subfield_name = sub[1]
+		    subfield_value = sub[3..-1]
 		  else
 		    subfield_name = 'a'
-		    subfield_value = subfield
+		    subfield_value = sub
 		  end
 		else
-		  subfield_name = subfield[0]
-		  subfield_value = subfield[2..-1]
+		  subfield_name = sub[0]
+		  subfield_value = sub[2..-1]
 		end
-		puts "  subfield: name = '#{subfield_name}', value '#{subfield_value}'" if verbose
+		dprint "  subfield: name = '#{subfield_name}', value '#{subfield_value}'"
 		subfield = MARC::Subfield.new(subfield_name, subfield_value.strip)
 		field.append(subfield)
 	      end
@@ -301,22 +295,22 @@ public
     end		# rows.each
   end
 
-  def write_marc(output_file, verbose)
+  def write_marc(output_file)
     @writer = MARC::Writer.new(output_file)
-    puts "MARC:" if verbose
+    dprint "MARC:"
     @record = MARC::Record.new()
 
     # Call the appropriate writer
     case @kind
     when :evergreen
-      puts "Converting Evergreen..." if verbose
-      write_marc_evergreen(output_file, verbose)
+      dprint "Converting Evergreen..."
+      write_marc_evergreen
     when :oclc
-      puts "Converting OCLC..." if verbose
-      write_marc_oclc(output_file, verbose)
+      dprint "Converting OCLC..."
+      write_marc_oclc
     when :biblio
-      puts "Converting BiblioCommons..." if verbose
-      write_marc_biblio(output_file, verbose)
+      dprint "Converting BiblioCommons..."
+      write_marc_biblio
     else
       puts "Unknown HTML format!"
     end
@@ -358,4 +352,4 @@ if !overwrite && File.exist?(output_file)
 end
 
 c = Converter.new(input_file, verbose)
-c.write_marc(output_file, verbose)
+c.write_marc(output_file)
