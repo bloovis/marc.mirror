@@ -1,4 +1,4 @@
-#!/usr/bin/ruby
+#!/usr/bin/env ruby
 
 # This script reads a web page, either a local file or a URL, that should be
 # the page that is produced when you do one of the following:
@@ -51,6 +51,8 @@ public
     @verbose = verbose
     if filename =~ /^https?:/
       @handle = IO.popen(['wget', '-nv', '-O', '-', filename])
+    elsif filename == "-"
+      @handle = $stdin
     else
       @handle = File.open(filename)
     end
@@ -346,6 +348,7 @@ ARGV.shift(nopts)
 if ARGV.length < 2
    puts "usage: html2marc.rb [-o] input-url-or-file MARC-output-file"
    puts "  -o : overwrite existing output file"
+   puts "  -v : print verbose debugging information"
    exit 1
 end
 
