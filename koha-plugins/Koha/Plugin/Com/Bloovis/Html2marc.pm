@@ -74,7 +74,7 @@ sub to_marc {
        print("Unable to run pipe\n");
     } else {
        foreach my $line ( split( /\n/, $data) ) {
-          # print "line: '$line'\n";
+          $line =~ s/\r//;	# Get rid of Windows newline cruft
           print $pipe "$line\n";
        }
        close($pipe);
