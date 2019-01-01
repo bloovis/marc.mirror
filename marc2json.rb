@@ -21,6 +21,6 @@ ARGV.each do |filename|
     # Convert MARC record to hash
     h = record.to_hash
     # Convert hash to JSON
-    puts JSON.dump(h).gsub(/{\"([0-9])/, "\n{\"\\1")
+    puts JSON.dump(h).gsub(/{\"([0-9][0-9][0-9])/, "\n{\"\\1")
   end
 end
