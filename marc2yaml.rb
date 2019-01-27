@@ -15,10 +15,9 @@ ARGV.each do |filename|
 			    :internal_encoding => "utf-8",
                             :validate_encoding => true)
   recno = 0
-  reader.each_raw do |raw|
+  reader.each do |record|
     recno += 1
     puts("------ Record #{recno} ------")
-    record = reader.decode(raw)
     # Convert MARC record to hash
     h = record.to_hash
     # Convert hash to yaml
