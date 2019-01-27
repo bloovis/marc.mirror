@@ -110,16 +110,18 @@ public
 	      inds << itext
 	    end
 	  end
-	  field = MARC::DataField.new(tag_name, inds[0], inds[1])
-	  texts = tags.split(/\s*<\/?span[^>]*>/)
-	  texts.each_index do |i|
-	    text = texts[i]
-	    if text =~ /‡(.)/
-	      subfield_name = $1
-	      subfield_value = texts[i+1]
-	      dprint "   subfield: name: '#{subfield_name}', value: '#{subfield_value}'"
-	      subfield = MARC::Subfield.new(subfield_name, subfield_value)
-	      field.append(subfield)
+	  if tag_name < '900'
+	    field = MARC::DataField.new(tag_name, inds[0], inds[1])
+	    texts = tags.split(/\s*<\/?span[^>]*>/)
+	    texts.each_index do |i|
+	      text = texts[i]
+	      if text =~ /‡(.)/
+		subfield_name = $1
+		subfield_value = texts[i+1]
+		dprint "   subfield: name: '#{subfield_name}', value: '#{subfield_value}'"
+		subfield = MARC::Subfield.new(subfield_name, subfield_value)
+		field.append(subfield)
+	      end
 	    end
 	  end
 	elsif rest =~ /\s*<td class=\"marc_tag_data\"[^>]*>(.*)<\/td>/m
@@ -172,9 +174,10 @@ public
 	end
 	if inds && tag_name && tag_value
 	  tag_value = fixentities(tag_value)
+	  field = nil
 	  if tag_name >= '000' && tag_name <= '009'
 	    field = MARC::ControlField.new(tag_name, tag_value)
-	  else
+	  elsif tag_name < '900'
 	    field = MARC::DataField.new(tag_name, inds[0], inds[1])
 	    subfields = tag_value.split('$')
 	    subfields.each do |subfield|
@@ -187,7 +190,9 @@ public
 	      end
 	    end
 	  end
-	  @record.append(field)
+	  if field
+	    @record.append(field)
+	  end
 	  inds = nil
 	  tag_name = nil
 	  tag_value = nil
