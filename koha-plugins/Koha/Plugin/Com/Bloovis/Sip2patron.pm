@@ -1,3 +1,15 @@
+# This plugin provides an additional patron validation function
+# for use by a patched version of Koha's SIP2 server.
+# Find the patch SIP-plugin.patch in the root directory of
+# this git repository, or obtain a copy here:
+#   https://gitlab.com/bloovis/marc/blob/master/SIP-plugin.patch
+# Apply this patch by doing this:
+#   cd /usr/share/koha/lib
+#   patch -p0 </PATH/TO/SIP-plugin.patch
+# Then restart the koha SIP server:
+#   koha-stop-sip <instance>
+#   koha-start-sip <instance>
+
 package Koha::Plugin::Com::Bloovis::Sip2patron;
 
 ## It's good practive to use Modern::Perl
