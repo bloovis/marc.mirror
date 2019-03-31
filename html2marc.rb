@@ -38,8 +38,7 @@ private
     end
   end
 
-  # Fix a couple of spurious HTML entities that found their way into
-  # various fields in the CSV file.
+  # Convert some HTML entities into their ASCII equivalents.
 
   def fixentities(s)
     return s.gsub(/&apos;/, "'").gsub(/&amp;?/, '&').gsub(/&quot;/, '"').gsub(/&nbsp;/, ' ')
@@ -238,13 +237,13 @@ public
 	  end
 	end
 	if inds && tag_name && tag_value
+	  # It's necessary to strip out the non-breaking spaces
+	  # from the tag value; otherwise, Koha will hang trying
+	  # to display the resulting record in the MARC
+	  # import tool.
 	  tag_value = fixentities(tag_value)
 	  field = nil
 	  if tag_name >= '000' && tag_name <= '009'
-	    # It's necessary to strip out the non-breaking spaces
-	    # from the tag value; otherwise, Koha will hang trying
-	    # to display the resulting record in the MARC
-	    # import tool.
 	    if tag_name == '008'
 	      field = MARC::ControlField.new('003', 'OCoLC')
 	      @record.append(field)
@@ -351,7 +350,7 @@ ARGV.shift(nopts)
 
 # Check arguments. First is input file.  Second is output file.
 if ARGV.length < 2
-   puts "usage: html2marc.rb [-o] input-url-or-file MARC-output-file"
+   puts "usage: html2marc.rb [-o|-v] input-url-or-file MARC-output-file"
    puts "  -o : overwrite existing output file"
    puts "  -v : print verbose debugging information"
    exit 1
