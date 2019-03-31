@@ -1,0 +1,64 @@
+--- C4/SIP/SIPServer.pm.orig	2018-10-13 16:37:44.704277999 -0400
++++ C4/SIP/SIPServer.pm	2018-10-13 16:46:26.636277999 -0400
+@@ -107,6 +107,9 @@
+ 		die "process_request: Bad server connection";
+     }
+ 
++    my $ipaddr = $self->{server}->{client}->peerhost;
++    syslog ( 'LOG_DEBUG', "process_request: client IP address = $ipaddr" );
++
+     $transport = $transports{$self->{service}->{transport}};
+ 
+     if (!defined($transport)) {
+--- C4/SIP/Sip/MsgType.pm.orig	2018-10-13 16:38:11.380277999 -0400
++++ C4/SIP/Sip/MsgType.pm	2018-10-17 07:59:00.488277999 -0400
+@@ -20,6 +20,7 @@
+ use C4::Auth qw(&check_api_auth);
+ 
+ use Koha::Patron::Attributes;
++use Koha::Plugins::Handler;
+ 
+ use UNIVERSAL::can;
+ 
+@@ -469,6 +470,25 @@
+     return $resp;
+ }
+ 
++# Return true if the patron is valid for the particular client
++# that issued the SIP2 request.
++
++sub check_patron {
++    my ( $patron, $server ) = @_;
++
++    if ( $patron ) {
++        my $plugin_class = $server->{account}->{plugin_class};
++	if ($plugin_class) {
++	    return Koha::Plugins::Handler->run({
++		    class  => $plugin_class,
++		    method => 'sip2_validate_patron',
++		    params => { patron => $patron, server => $server },
++		});
++	}
++    }
++    return 1;
++}
++
+ sub handle_patron_status {
+     my ( $self, $server ) = @_;
+     my $ils = $server->{ils};
+@@ -480,6 +500,7 @@
+ 
+     $ils->check_inst_id( $fields->{ (FID_INST_ID) }, "handle_patron_status" );
+     $patron = $ils->find_patron( $fields->{ (FID_PATRON_ID) } );
++    $patron = undef unless ( check_patron ( $patron, $server ) );
+     $resp = build_patron_status( $patron, $lang, $fields, $server );
+     $self->write_msg( $resp, undef, $server->{account}->{terminator}, $server->{account}->{encoding} );
+     return (PATRON_STATUS_REQ);
+@@ -933,6 +954,7 @@
+     $end          = $fields->{ (FID_END_ITEM) };
+ 
+     $patron = $ils->find_patron($patron_id);
++    $patron = undef unless ( check_patron ( $patron, $server ) );
+ 
+     $resp = (PATRON_INFO_RESP);
+     if ($patron) {
