@@ -291,8 +291,12 @@ public
 		  subfield_value = sub[2..-1]
 		end
 		dprint "  subfield: name = '#{subfield_name}', value '#{subfield_value}'"
-		subfield = MARC::Subfield.new(subfield_name, subfield_value.strip)
-		field.append(subfield)
+		if subfield_value
+		  subfield = MARC::Subfield.new(subfield_name, subfield_value.strip)
+		  field.append(subfield)
+		else
+		  puts "Tag #{tag_name}, subfield #{subfield_name} has a nil value"
+		end
 	      end
 	    end
 	  end
