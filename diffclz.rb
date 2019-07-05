@@ -13,6 +13,25 @@ col_sep = ','		# Can be set to semicolon by -z option
 book = true		# true if book catalog, false if movie catalog
 first = true		# true if reading first row in CSV file
 
+# Find a book in an array of books by comparing titles.
+# A book is a CSV row from a Collectorz catalog.
+
+def findbook(row1, rows, ind, title_ind1, title_ind2)
+  unless rows
+    return false
+  end
+  rows.each do |row2|
+    title1 = row1[title_ind1].gsub(/[\'\"]/, '')
+    title2 = row2[title_ind2].gsub(/[\'\"]/, '')
+    if title1 == title2
+      return true
+    else
+      puts "Mismatched title for index #{ind}: '#{row1[title_ind1]}' != '#{row2[title_ind2]}'"
+    end
+  end
+  return false
+end
+
 # Check for options before file arguments.
 nopts = 0
 ARGV.each do |arg|
@@ -81,23 +100,41 @@ rows1 = {}
 rows2 = {}
 header1 = ""
 header2 = ""
-ind_ind = 0	# index of "Index" field in a row
+index_ind1 = 0	# index of "Index" field in a row from input_file1
+title_ind1 = 0	# index of "Title" field in a row from input_file1
+index_ind2 = 0	# index of "Index" field in a row from input_file2
+title_ind2 = 0	# index of "Title" field in a row from input_file2
 
 first = true
 csv1.each do |row|
   # The first row contains column headers, from which we determine
-  # whether we're reading a book catalog or a movie catalog.
+  # the index of the Index and Title fields.
   if first
-    ind_ind = row.index('Index')
-    unless ind_ind
-      puts 'Index not seen in first row'
+    index_ind1 = row.index('Index')
+    unless index_ind1
+      puts "Index not seen in first row of #{input_file1}"
+      exit 1
+    end
+    title_ind1 = row.index('Title')
+    unless title_ind1
+      puts "Title not seen in first row of #{input_file1}"
       exit 1 
     end
     first = false
     header1 = row.to_csv
   else
-    ind = row[ind_ind]
-    rows1[ind] = row.to_csv
+    ind = row[index_ind1]
+    prev_array = rows1[ind]
+    if prev_array
+      prev_array.each do |prev|
+	title1 = row[title_ind1]
+	title2 = prev[title_ind1]
+	puts "#{input_file1}: index #{ind} used by both '#{title1}' and '#{title2}'"
+      end
+      rows1[ind] << row
+    else
+      rows1[ind] = [row]
+    end
   end
 end
 
@@ -106,33 +143,52 @@ csv2.each do |row|
   # The first row contains column headers, from which we determine
   # whether we're reading a book catalog or a movie catalog.
   if first
-    ind_ind = row.index('Index')
-    unless ind_ind
-      puts 'Index not seen in first row'
+    index_ind2 = row.index('Index')
+    unless index_ind2
+      puts "Index not seen in first row of #{input_file2}"
+      exit 1 
+    end
+    title_ind2 = row.index('Title')
+    unless title_ind2
+      puts "Title not seen in first row of #{input_file1}"
       exit 1 
     end
     first = false
     header2 = row.to_csv
   else
-    ind = row[ind_ind]
-    rows2[ind] = row.to_csv
+    ind = row[index_ind2]
+    prev_array = rows2[ind]
+    if prev_array
+      prev_array.each do |prev|
+	title1 = row[title_ind2]
+	title2 = prev[title_ind2]
+	puts "#{input_file2}: Index #{ind} used by both '#{title1}' and '#{title2}'"
+      end
+      rows2[ind] << row
+    else
+      rows2[ind] = [row]
+    end
   end
 end
 
 of1 = File.open(output_file1, "w")
 of1.write(header1)
-rows1.each do |ind, row|
-  unless rows2[ind]
-    of1.write(row)
+rows1.each do |ind, row1_array|
+  row1_array.each do |row1|
+    unless findbook(row1, rows2[ind], ind, title_ind1, title_ind2)
+      of1.write(row1.to_csv)
+    end
   end
 end
 of1.close
 
 of2 = File.open(output_file2, "w")
 of2.write(header2)
-rows2.each do |ind, row|
-  unless rows1[ind]
-    of2.write(row)
+rows2.each do |ind, row2_array|
+  row2_array.each do |row2|
+    unless findbook(row2, rows1[ind], ind, title_ind2, title_ind1)
+      of2.write(row2.to_csv)
+    end
   end
 end
 of2.close
