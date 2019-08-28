@@ -82,7 +82,7 @@ ARGV.each do |arg|
 end
 ARGV.shift(nopts)
 
-# Check arguments. First is input file.  Second is output file.
+# Check arguments. First is output file.  Second is ISBN.
 if ARGV.length < 2
    puts "usage: fetchmarc.rb [-o|-v] MARC-output-file isbn"
    puts "  -o : overwrite existing output file"
