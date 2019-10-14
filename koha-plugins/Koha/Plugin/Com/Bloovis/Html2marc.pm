@@ -59,9 +59,11 @@ sub new {
 ## of converting some type of file to MARC for use from the stage records
 ## for import tool
 ##
-## This example takes a text file, each line of which contains a URL
-## pointing to a C/W Mars web page containing MARC information for
-## a holding, and converts each web page to the equivelent MARC record.
+## This example takes an HTML file containing a MARC display from either:
+## * Evergreen (e.g., CWMARS, GAPINES)
+## * Bibliocommons (e.g. Boston/Chicago Public Libraries)
+## * OCLC Connexion web interface
+## and converts the HTML to the equivalent MARC record.
 
 sub to_marc {
     my ( $self, $args ) = @_;
