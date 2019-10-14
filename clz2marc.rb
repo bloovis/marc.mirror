@@ -801,6 +801,29 @@ def convertmovie(row, inds, dryrun, windows, writer)
   end
 end
 
+# Remove Koha-related fields from a MARC record.  This is
+# necessary because some Z39.50 servers return 952 fields
+# that interfere with Koha.
+
+def clean_record(old_record)
+  # Create an output record, which will contain the non-Koha
+  # fields from the original record.
+  record = MARC::Record.new
+
+  # Copy the leader, which contains important information about
+  # material type.
+  record.leader = old_record.leader
+
+  # For each field in the old record, copy it or ignore it.
+  old_record.each do |field|
+    # Ignore Koha-specific fields.
+    if field.tag != '942' && field.tag != '952'
+      record.append(field)
+    end
+  end
+  return record
+end
+
 # Attempt to fetch a MARC record for a given ISBN from a
 # Z39.50 server.  If found, return it as a MARC::Record object;
 # otherwise return nil.
@@ -825,9 +848,10 @@ def get_z3950(isbn)
 	rset = conn.search("@attr 1=7 #{isbn}")
 	if rset[0]
 	  puts "ISBN #{isbn} found at #{host}"
-	  return MARC::Record.new_from_marc(rset[0].raw,
+	  record = MARC::Record.new_from_marc(rset[0].raw,
             :external_encoding => 'utf-8',
             :internal_encoding => 'utf-8')
+	  return clean_record(record)
 	else
 	  puts "ISBN #{isbn} not found at #{host}"
 	end
