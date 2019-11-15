@@ -3,7 +3,9 @@
 class LocNameConverter
   @@number_to_name = {
      "001" => "control",
+     "003" => "control_id",
      "005" => "date",
+     "007" => "physical_fixed",
      "008" => "fixed",
      "020" => "isbn",
      "040" => "catsource",
@@ -16,6 +18,7 @@ class LocNameConverter
      "246" => "varying_title",
      "250" => "edition",
      "257" => "country",
+     "260" => "publication",
      "264" => "production",
      "300" => "physical",
      "336" => "content",
