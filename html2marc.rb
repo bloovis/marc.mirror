@@ -62,7 +62,7 @@ public
     @handle.each do |line|
       if @table
 	@table << line
-        if line =~ /<\/table>/
+        if line =~ /<\/table>/i
 	  break
 	end
       elsif line =~ /table class="marc_table"/
@@ -206,19 +206,19 @@ public
     inds = nil
     tag_name = nil
     tag_value = nil
-    rows = @table.split('<tr')
+    rows = @table.split(/<tr/i)
     rows.each do |row|
-      tds = row.split('<td')
+      tds = row.split(/<td/i)
       tds.each do |t|
         td = fixentities(t)
         case td
         when /catexTag/
-	  if td =~ /<b>\n?(.*)<\/b>/
+	  if td =~ /<b>\n?([\d]+)(<\/font>)?<\/b>/i
 	    tag_name = $1.strip
             dprint "Tag name: '#{tag_name}'"
 	  end
 	when /catexInds/
-	  if td =~ /\">\n?(.*)<\/td/
+	  if td =~ /\">\n?(.*)<\/td/i
 	    inds = $1
 	    if inds[0] == "\n"
 	      inds = inds[1..2]
@@ -231,7 +231,7 @@ public
 	when /catexData/
 	  dprint "  td (data): '#{td}'"
 	  # t = td.gsub("\n", ' ').strip
-	  if td =~ /\">(.*)<\/td/m
+	  if td =~ /\">(.*)<\/td/mi
 	    tag_value = $1.gsub(/[\r\n]+$/, '').gsub("\n", ' ').gsub(/^\s+/, '')
             dprint "  tag value: '#{tag_value}'"
 	  end
