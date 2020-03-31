@@ -7,8 +7,22 @@
 require 'csv'
 require 'marc'
 
+printsql = true
+
+nopts = 0
+ARGV.each do |arg|
+  if arg == '-n'
+    printsql = false
+    nopts += 1
+  else
+    break
+  end
+end
+ARGV.shift(nopts)
+
 if ARGV.length != 1
-   puts "usage: missingsql.rb inputfile.csv"
+   puts "usage: missingsql.rb [options] inputfile.csv"
+   puts "  -n : don't print SQL, just print barcodes"
    exit 1
 end
 input_file = ARGV[0]
@@ -40,6 +54,10 @@ csv.each do |row|
     end
     first = false
   else
-    puts "update items set itemlost = 4 where barcode = '#{row[barcode_column]}';"
+    if printsql
+      puts "update items set itemlost = 4 where barcode = '#{row[barcode_column]}';"
+    else
+      puts row[barcode_column]
+    end
   end
 end
