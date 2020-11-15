@@ -78,17 +78,41 @@ sub sip2_validate_patron {
 	my $id = $server->{account}->{id};
 	my $attr = undef;
 
+        #system("echo sip2_validate_patron: id is $id >>/tmp/junk");
 	if ( $id eq 'kanopy' ) {
+            #system("echo sip2_validate_patron: setting attr to KANOPY_OK >>/tmp/junk");
 	    $attr = 'KANOPY_OK';
 	} elsif ( $id eq 'gmlc' ) {
+            #system("echo sip2_validate_patron: setting attr to GMLC_OK >>/tmp/junk");
 	    $attr = 'GMLC_OK';
+	} else {
+            #system("echo sip2_validate_patron: attr is undef >>/tmp/junk");
 	}
 	if ($attr) {
+	    #system("echo sip2_validate_patron: attr is $attr >>/tmp/junk");
 	    my $borrowernumber = $patron->{borrowernumber};
-	    my $value = C4::Members::Attributes::GetBorrowerAttributeValue( $borrowernumber, $attr );
-	    return $value eq "1";
+	    my $realpatron = Koha::Patrons->find( $borrowernumber );
+	    unless ($realpatron) {
+		#system("echo 'sip2_validate_patron: no such patron $borrowernumber' >>/tmp/junk");
+		return undef;
+	    }
+	    #system("echo 'sip2_validate_patron: calling get_extended_attribute with $borrowernumber' >>/tmp/junk");
+	    my $value = $realpatron->get_extended_attribute( $attr );
+	    if ($value) {
+	        my $ok = $value->attribute;
+		#system("echo 'sip2_validate_patron: borrowernumber is $borrowernumber, ok is $ok' >>/tmp/junk");
+		return $ok eq "1";
+	    } else {
+	        #system("echo 'sip2_validate_patron: no such attribute $attr' >>/tmp/junk");
+	        return undef;
+	    }
+	} else {
+	    #system("echo sip2_validate_patron: attr is nil >>/tmp/junk");
 	}
+    } else {
+	#system("echo sip2_validate_patron: patron is nil >>/tmp/junk");
     }
+
     return 1;
 }
 
