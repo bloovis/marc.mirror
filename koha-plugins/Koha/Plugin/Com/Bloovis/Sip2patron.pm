@@ -40,8 +40,8 @@ our $metadata = {
     name            => 'SIP2 Patron Validator Plugin',
     author          => 'Mark Alexander',
     date_authored   => '2018-10-16',
-    date_updated    => '2018-10-16',
-    minimum_version => '16.06.00.018',
+    date_updated    => '2020-12-01',
+    minimum_version => '19.1100000',
     maximum_version => undef,
     version         => $VERSION,
     description     => 'This plugin implements a SIP2 patron validator',
@@ -66,7 +66,7 @@ sub new {
 
 ## The existence of a 'sip2_validate_patron' subroutine means
 ## the plugin is capable of validating a patron for the SIP2 server.
-## Return a true value if the patron is valid; false otherwise.
+## Return the patron if it is valid, or undef otherwise.
 
 sub sip2_validate_patron {
     my ( $self, $args ) = @_;
@@ -101,7 +101,7 @@ sub sip2_validate_patron {
 	    if ($value) {
 	        my $ok = $value->attribute;
 		#system("echo 'sip2_validate_patron: borrowernumber is $borrowernumber, ok is $ok' >>/tmp/junk");
-		return $ok eq "1";
+		return ($ok eq "1") ? $patron : undef;
 	    } else {
 	        #system("echo 'sip2_validate_patron: no such attribute $attr' >>/tmp/junk");
 	        return undef;
@@ -113,7 +113,7 @@ sub sip2_validate_patron {
 	#system("echo sip2_validate_patron: patron is nil >>/tmp/junk");
     }
 
-    return 1;
+    return $patron;
 }
 
 ## This is the 'install' method. Any database tables or other setup that should
