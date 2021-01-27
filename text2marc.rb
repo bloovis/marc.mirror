@@ -3,34 +3,46 @@
 require 'marc'
 require 'psych'
 
-def convert_fields(record, tag, rest)
+def convert_record(record, line)
   # puts "tag = #{tag}, rest = #{rest}"
   
+  if line !~ /^=(\d\d\d|LDR)\s*(.*)$/
+    puts("Error: line not in correct format: #{line}")
+    return
+  end
+  tag = $1
+  rest = $2
   rest.gsub!(/\\/,' ')
   if tag == 'LDR'
-    tag = '000'
+    record.leader = rest
+    return
   end
   if tag >= '000' && tag <= '009'
-    puts("Control field #{tag}, content = '#{rest}'")
+    #puts("Control field #{tag}, content = '#{rest}'")
     field = MARC::ControlField.new(tag, rest)
+    if tag == '000'
+      record.leader = field
+    else
+      record.append(field)
+    end
   else
     ind1 = rest[0]
     ind2 = rest[1]
     rest = rest[2..-1]
     field = MARC::DataField.new(tag, ind1, ind2)
-    puts("Normal field #{tag}, ind1 = #{ind1}, ind2 = #{ind2}, remainder = #{rest}")
+    #puts("Normal field #{tag}, ind1 = #{ind1}, ind2 = #{ind2}, remainder = #{rest}")
     subfields = rest.split('$')
     subfields.each do |sf|
       if sf != ''
 	type = sf[0]
 	value = sf[1..-1]
-	puts("  subfield #{type}, value = '#{value}'")
+	#puts("  subfield #{type}, value = '#{value}'")
 	subfield = MARC::Subfield.new(type, value)
 	field.append(subfield)
       end
     end
+    record.append(field)
   end
-  record.append(field)
 end
 
 # Check arguments. First is input file.  Second is output file.
@@ -49,13 +61,21 @@ end
 writer = MARC::Writer.new(output_file)
 record = MARC::Record.new()
 
-recno = 0
+multiline = ''
 File.open(input_file) do |file|
   file.each do |line|
     if line =~ /^=(\d\d\d|LDR)\s*(.*)$/
-      convert_fields(record, $1, $2)
+      if multiline != ''
+	convert_record(record, multiline)
+      end
+      multiline = line.chomp
+    else
+      multiline << line.chomp
     end
   end
+end
+if multiline != ''
+  convert_record(record, multiline)
 end
 
 # Write the MARC record to the output file.
