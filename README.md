@@ -52,6 +52,26 @@ report generator, and creates a KOC (Koha Offline Circulation) file that can
 be uploaded to Koha.  This is useful for transferring checkout information from
 Mandarin to Koha.
 
+## marc2yaml.rb
+
+This script reads a MARC file and outputs it in YAML format.  If you redirect
+the output to a file, you can edit the file and then convert it back to MARC
+with yaml2marc.rb.
+
+## yaml2marc.rb
+
+This script reads a YAML file that was previously created with marc2yaml.rb,
+and converts it back to MARC.
+
+## text2marc.rb
+
+This script reads a file containing a textual representation of a MARC record,
+as described here:
+
+  <https://www.loc.gov/marc/makrbrkr.html>
+
+and converts it to MARC.
+
 ## Koha plugins
 
 The two Koha plugins are found in the `koha-plugins` directory.  They
@@ -60,6 +80,6 @@ are:
 * Html2marc.pm - a plugin to convert HTML to MARC when importing MARC
   records.  This requires that the `html2marc.rb` script be copied
   to `/usr/local/bin`.
-* Sip2patron.pm - a plugin that provides SIP2 validation for GMLC (Overdrive)
-  and Kanopy.  This requires that the patch `SIP-plugin.patch` be copied
+* Sip2patron.pm - a plugin that provides SIP2 validation for GMLC (Overdrive),
+  Kanopy, and Mango Languages.  This requires that the patch `SIP-plugin.patch` be copied
   to `/usr/share/koha/lib` and be applied using `patch -p0 <SIP-plugin.patch`.
