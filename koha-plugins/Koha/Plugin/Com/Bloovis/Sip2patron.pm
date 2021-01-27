@@ -85,6 +85,9 @@ sub sip2_validate_patron {
 	} elsif ( $id eq 'gmlc' ) {
             #system("echo sip2_validate_patron: setting attr to GMLC_OK >>/tmp/junk");
 	    $attr = 'GMLC_OK';
+	} elsif ( $id eq 'mango' ) {
+            #system("echo sip2_validate_patron: setting attr to MANGO_OK >>/tmp/junk");
+	    $attr = 'MANGO_OK';
 	} else {
             #system("echo sip2_validate_patron: attr is undef >>/tmp/junk");
 	}
@@ -101,10 +104,17 @@ sub sip2_validate_patron {
 	    if ($value) {
 	        my $ok = $value->attribute;
 		#system("echo 'sip2_validate_patron: borrowernumber is $borrowernumber, ok is $ok' >>/tmp/junk");
-		return ($ok eq "1") ? $patron : undef;
+		if ($attr eq 'MANGO_OK') {
+		  # Mango defaults to Yes unless explicitly set to 0
+		  return ($ok eq "0") ? undef : $patron;
+		} else {
+	          # Kanopy and GMLC default to No unless explicitly set to 1
+		  return ($ok eq "1") ? $patron : undef;
+		}
 	    } else {
 	        #system("echo 'sip2_validate_patron: no such attribute $attr' >>/tmp/junk");
-	        return undef;
+		# Mango defaults to Yes if not set explicitly
+	        return ($id eq 'mango') ? $patron : undef;
 	    }
 	} else {
 	    #system("echo sip2_validate_patron: attr is nil >>/tmp/junk");
