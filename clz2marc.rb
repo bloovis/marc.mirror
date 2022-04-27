@@ -867,7 +867,7 @@ dryrun = false		# Can be set to true by -n option
 overwrite = false	# Can be set to true by -o option
 use_z3950 = false	# Can be set to true by -z option
 windows = false		# Can be set to true by -w option
-col_sep = ','		# Can be set to semicolon by -z option
+col_sep = ','		# Can be set to semicolon by -s option
 
 book = true		# true if book catalog, false if movie catalog
 first = true		# true if reading first row in CSV file
