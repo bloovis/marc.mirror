@@ -340,6 +340,7 @@ end
 
 nopts = 0
 ARGV.each do |arg|
+  # puts "Checking argument '#{arg}'"
   if arg == '-o'
     overwrite = true
     nopts += 1
@@ -352,17 +353,25 @@ ARGV.each do |arg|
 end
 ARGV.shift(nopts)
 
-# Check arguments. First is input file.  Second is output file.
-if ARGV.length < 2
-   puts "usage: html2marc.rb [-o|-v] input-url-or-file MARC-output-file"
+# Check arguments. First is input file.  Optional second is output file.
+if ARGV.length < 1 || ARGV.length > 2
+   puts "usage: html2marc.rb [-o|-v] input-url-or-file [MARC-output-file]"
    puts "  -o : overwrite existing output file"
    puts "  -v : print verbose debugging information"
    exit 1
 end
 
 input_file = ARGV[0]
-output_file = ARGV[1]
+if ARGV.length == 1
+  # The output filename is the same as the input filename but with the
+  # extension changed to .marc
+  f = input_file
+  output_file = File.join(File.dirname(f), File.basename(f, File.extname(f))) + '.marc'
+elsif ARGV.length == 2
+  output_file = ARGV[1]
+end
 
+# puts "Checking if #{output_file} exists"
 if !overwrite && File.exist?(output_file)
   puts "#{output_file} exists; will not overwrite."
   exit 1
@@ -370,3 +379,7 @@ end
 
 c = Converter.new(input_file, verbose)
 c.write_marc(output_file)
+
+# Print the record to verify that the conversion succeeded.
+
+system('printraw.rb', output_file)
