@@ -1,5 +1,8 @@
 # marc
 
+(*Note*: If you are reading this on Github, you can find the
+original Fossil repository [here](https://www.bloovis.com/fossil/home/marka/fossils/marc/home)).
+
 This repository contains scripts to manipulate MARC records, which
 I wrote to help convert a Mandarin-hosted library catalog to
 a Koha-hosted catalog.  There are also a few related scripts
