@@ -14,7 +14,7 @@ use the 'marc' Ruby gem, so you'll need to install that first.
 To clone this repository:
 
 ```
-fossil clone https://chiselapp.com/user/bloovis/repository/marc marc.fossil
+fossil clone https://www.bloovis.com/fossil/home/marka/fossils/marc
 ```
 
 ## m2k.rb
