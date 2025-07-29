@@ -11,6 +11,12 @@ that do not deal with MARC records, and two Koha plugins.
 All of the scripts are written in Ruby.  Some of them
 use the 'marc' Ruby gem, so you'll need to install that first.
 
+To clone this repository:
+
+```
+fossil clone https://chiselapp.com/user/bloovis/repository/marc marc.fossil
+```
+
 ## m2k.rb
 
 This script converts a MARC catalog exported by Mandarin into a form that
