@@ -81,6 +81,11 @@ as described here:
 
 and converts it to MARC.
 
+## purgem3.rb
+
+This script reads a UTF-8 encoded MARC file, purges Mandarin-specific
+fields, and writes the output to a second file.
+
 ## Koha plugins
 
 The two Koha plugins are found in the `koha-plugins` directory.  They
