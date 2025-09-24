@@ -197,7 +197,7 @@ Start the SIP server:
 
     koha-sip --restart rpl
 
-#### Test SIP2
+#### Test manually
 
 Use this command:
 
@@ -233,6 +233,29 @@ messages to `/var/log/messages`.  This command will find those messages:
 
     egrep koha_sip /var/log/messages | less
 
+
+#### Test with testsip2.rb
+
+In this directory you will find a script `testsip2.rb` that you can
+use to test the patron validation function of a SIP server.  It will
+work with standard Koha SIP setups, as well as those that use my `Sip2patron` plugin.
+The script requires the `ruby_expect` gem.  It takes the following parameters:
+
+* host - the hostname of the Koha server to test
+* port - the port number of Koha's SIP2 server (typically 6001)
+* library - the name of the Koha instance
+* sip2 user - the name of the SIP2 user, used to log in
+* sip2 password - the password of the SIP2 user
+* patron - the username of the patron to check for validity
+* patron password - the password of the patron being checked
+* patron barcode - the barcode of the patron being checked
+
+Here's a sample test run, using the data from the setup described above:
+
+```
+./testsip2.rb localhost 6001 rpl kanopy **password** kanopy **password** R9900
+```
+
 #### Create SSH tunnel
 
 The SIP2 protocol is not encrypted, so the client must set up an ssh tunnel
@@ -247,4 +270,4 @@ Then you can use this to test the tunnel:
 
     telnet localhost 9876
 
-Then enter the SIP2 messages as described in the previous section.
+Then enter the SIP2 messages as described in the "Test manually" section above.
