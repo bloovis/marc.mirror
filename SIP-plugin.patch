@@ -1,26 +1,26 @@
---- C4/SIP/SIPServer.pm.orig	2020-10-27 17:18:36.000000000 -0400
-+++ C4/SIP/SIPServer.pm	2020-11-14 15:50:23.510805561 -0500
-@@ -125,6 +125,9 @@
+--- C4/SIP/SIPServer.pm.orig	2025-08-26 13:36:25.000000000 -0700
++++ C4/SIP/SIPServer.pm	2025-09-24 13:54:51.630180590 -0700
+@@ -260,6 +260,9 @@
          die "process_request: Bad server connection";
      }
  
 +    my $ipaddr = $self->{server}->{client}->peerhost;
 +    siplog( 'LOG_DEBUG', "process_request: client IP address = $ipaddr" );
 +
-     $transport = $transports{$self->{service}->{transport}};
+     $transport = $transports{ $self->{service}->{transport} };
  
-     if (!defined($transport)) {
---- C4/SIP/Sip/MsgType.pm.orig	2020-10-27 17:18:36.000000000 -0400
-+++ C4/SIP/Sip/MsgType.pm	2020-11-14 15:38:09.179667426 -0500
-@@ -19,6 +19,7 @@
- use C4::Auth qw(&check_api_auth);
- 
+     if ( !defined($transport) ) {
+--- C4/SIP/Sip/MsgType.pm.orig	2025-08-26 13:36:25.000000000 -0700
++++ C4/SIP/Sip/MsgType.pm	2025-09-24 15:48:19.662979996 -0700
+@@ -23,6 +23,7 @@
+ use Koha::Patrons;
  use Koha::Patron::Attributes;
+ use Koha::Plugins;
 +use Koha::Plugins::Handler;
  use Koha::Items;
+ use Koha::DateUtils qw( output_pref );
  
- use UNIVERSAL::can;
-@@ -488,6 +489,25 @@
+@@ -523,6 +524,28 @@
      return $resp;
  }
  
@@ -32,13 +32,16 @@
 +
 +    if ( $patron ) {
 +        my $plugin_class = $server->{account}->{plugin_class};
-+	if ($plugin_class) {
-+	    return Koha::Plugins::Handler->run({
-+		    class  => $plugin_class,
-+		    method => 'sip2_validate_patron',
-+		    params => { patron => $patron, server => $server },
-+		});
-+	}
++        if ($plugin_class) {
++	   siplog( 'LOG_DEBUG', "check_patron: calling sip2_validate_patron" );
++           return Koha::Plugins::Handler->run({
++                   class  => $plugin_class,
++                   method => 'sip2_validate_patron',
++                   params => { patron => $patron, server => $server },
++               });
++        } else {
++	   siplog( 'LOG_DEBUG', "check_patron: couldn't find plugin class '%s'", $plugin_class );
++        }     
 +    }
 +    return 1;
 +}
@@ -46,16 +49,24 @@
  sub handle_patron_status {
      my ( $self, $server ) = @_;
      my $ils = $server->{ils};
-@@ -499,6 +519,7 @@
- 
-     $ils->check_inst_id( $fields->{ (FID_INST_ID) }, "handle_patron_status" );
-     $patron = $ils->find_patron( $fields->{ (FID_PATRON_ID) } );
+@@ -538,6 +561,7 @@
+         my $koha_patron = Koha::Patrons->find( $patron->{borrowernumber} );
+         $koha_patron->update_lastseen('connection');
+     }
 +    $patron = undef unless ( check_patron ( $patron, $server ) );
      $resp = build_patron_status( $patron, $lang, $fields, $server );
-     $self->write_msg( $resp, undef, $server->{account}->{terminator}, $server->{account}->{encoding} );
+     $self->write_msg( $resp, $server );
      return (PATRON_STATUS_REQ);
-@@ -960,6 +981,7 @@
-     $end          = $fields->{ (FID_END_ITEM) };
+@@ -821,6 +845,7 @@
+ 
+     $ils->check_inst_id( $inst_id, "block_patron" );
+     $patron = $ils->find_patron($patron_id);
++    $patron = undef unless ( check_patron ( $patron, $server ) );
+ 
+     # The correct response for a "Block Patron" message is a
+     # "Patron Status Response", so use that handler to generate
+@@ -1056,6 +1081,7 @@
+     Koha::Plugins->call( 'patron_barcode_transform', \$patron_id );
  
      $patron = $ils->find_patron($patron_id);
 +    $patron = undef unless ( check_patron ( $patron, $server ) );
