@@ -95,19 +95,27 @@ are:
   records.  This requires that the `html2marc.rb` script be copied
   to `/usr/local/bin`.
 
-* Sip2patron.pm - a plugin that provides SIP2 validation for GMLC (Overdrive),
-  Kanopy, and Mango Languages.
+* Sip2patron.pm - a plugin that provides SIP2 validation for Kanopy,
+  GMLC (Overdrive), and Mango Languages.
 
 ### Sip2patron.pm
 
 Our library decided that the use of Kanopy should be enabled or
 disabled for each patron, and not globally enabled.  This complicated
 things a lot.  I had to add a KANOPY_OK patron attribute, write a
-plugin, and patch the SIP2 server.
+plugin, and patch the SIP2 server.  (Similar configurations were also
+done for other services, like GMLC and Mango, but they are not
+described here.) The plugin and patch cause the SIP2 server to check
+that the KANOPY_OK patron attribute is set for the patron being
+queried by Kanopy.
 
-#### Plugin and Patch
 
-The source for plugin can be found in this repository here:
+**IMPORTANT**: In the following instructions, replace `rpl` and `RPL` with your actual Koha library instance name,
+lower- or upper-case as appropriate.
+
+#### Install plugin
+
+The source for the plugin can be found in this repository here:
 
 `koha-plugins/Koha/Plugin/Com/Bloovis/Sip2patron.pm`
 
@@ -115,23 +123,88 @@ The packaged plugin ready to be installed in Koha is here:
 
 `koha-plugins/koha-plugin-sip2patron.kpz`
 
-In order to use this plugin, you must copy `SIP-plugin.patch`
+Before you can install the plugin, you must configure your Koha instance
+to allow plugins *and* to allow plugins to be uploaded.  Edit the
+instance configuration file, which you will find here:
+
+`/etc/koha/sites/rpl/koha-conf.xml`
+
+Change this line:
+
+```
+ <enable_plugins>0</enable_plugins>
+```
+
+to this:
+
+```
+ <enable_plugins>1</enable_plugins>
+```
+
+Then change this line:
+
+```
+ <plugins_restricted>1</plugins_restricted>
+```
+
+to this:
+
+```
+ <plugins_restricted>0</plugins_restricted>
+```
+
+Restart Koha using this:
+
+```
+systemctl restart apache2	# might not be necessary, but doesn't hurt
+systemctl restart koha-common
+```
+
+Now install the plugin using Koha staff client.  Navigate to
+More / Adminstration / Manage plugins.  On that page, click
+on "Upload plugin" and browse to the plugin file in this repository,
+which you will find here:
+
+`koha-plugins/koha-plugin-sip2patron.kpz`
+
+#### Apply patch
+
+In order to use the plugin, you must copy `SIP-plugin.patch`
 (found in this directory) to `/usr/share/koha/lib` and apply it using:
 
 ```
 patch -p0 <SIP-plugin.patch
 ```
 
-The plugin and patch cause the SIP2 server to check that the KANOPY_OK
-patron attribute is set for the patron being queried by Kanopy.
+After applying this patch, or after editing the plugin in place,
+restart plack and SIP using:
+
+```
+koha-sip --stop rpl && koha-plack --restart rpl && koha-sip --start rpl
+```
+
+The SIP server log file is here:
+
+```
+/var/log/koha/rpl/sip-output.log
+```
+
+Once you've installed the plugin, you may need to debug it by editing it in place.  The
+plugin code will be installed here:
+
+`/var/lib/koha/rpl/plugins/Koha/Plugin/Com/Bloovis/Sip2patron.pm`
+
+In that file you'll find several `system` calls that output
+debug information to `/tmp/junk`.  If you have problems with the plugin,
+try uncommenting some or all of those `system` calls, or add some of
+your own.  Then after editing the file, be sure to restart plack and SIP
+using the commands shown above.
 
 #### Add patron attribute
 
-(In the following, replace `rpl` and `RPL` with your actual Koha library instance name,
-lower- or upper-case as appropriate.)
-
-First, enable the ExtendedPatronAttributes preference.  Then in
-Administration / Patron Attribute Types, create a new attribute type
+In the Koha staff client, navigate to More / Adminstration / System preferences.
+Enable the `ExtendedPatronAttributes` preference (if it is not already
+enabled).  Then in Administration / Patron Attribute Types, create a new attribute type
 called KANOPY_OK.  This has an authorized value category of YES_NO,
 and will be used to indicate that the patron is allowed to use Kanopy.
 
@@ -144,7 +217,7 @@ On the Koha server, add a new user called "kanopy" using this command as root:
 Respond to the password prompt by entering a hard-to-guess password.
 
 In the following examples, replace `**password**` with the password you just
-assigned to the kanopy user.
+assigned to the kanopy user, and replace rpl or RPL with your library instance name.
 
 #### Add kanopy patron
 
@@ -165,7 +238,7 @@ After saving the patron, click on More / Set permissions, enable
 
 #### Enable SIP2 in Koha
 
-Log into the Koha server as root using ssh.  Then run:
+On the Koha server, run this command:
 
     koha-sip --enable rpl
 
@@ -227,12 +300,6 @@ To verify that the validation code is really working, change
 the Kanopy patron's "Patron is allowed to use Kanopy" attibute to No, and run
 the above tests again.  This time, the final response should say
 something about an invalid patron cardnumber instead of "Greetings from Koha".
-
-If something goes wrong, be aware that the SIP2 server writes its log
-messages to `/var/log/messages`.  This command will find those messages:
-
-    egrep koha_sip /var/log/messages | less
-
 
 #### Test with testsip2.rb
 
