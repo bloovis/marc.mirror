@@ -94,6 +94,157 @@ are:
 * Html2marc.pm - a plugin to convert HTML to MARC when importing MARC
   records.  This requires that the `html2marc.rb` script be copied
   to `/usr/local/bin`.
+
 * Sip2patron.pm - a plugin that provides SIP2 validation for GMLC (Overdrive),
-  Kanopy, and Mango Languages.  This requires that the patch `SIP-plugin.patch` be copied
-  to `/usr/share/koha/lib` and be applied using `patch -p0 <SIP-plugin.patch`.
+  Kanopy, and Mango Languages.
+
+### Sip2patron.pm
+
+Our library decided that the use of Kanopy should be enabled or
+disabled for each patron, and not globally enabled.  This complicated
+things a lot.  I had to add a KANOPY_OK patron attribute, write a
+plugin, and patch the SIP2 server.
+
+#### Plugin and Patch
+
+The source for plugin can be found in this repository here:
+
+`koha-plugins/Koha/Plugin/Com/Bloovis/Sip2patron.pm`
+
+The packaged plugin ready to be installed in Koha is here:
+
+`koha-plugins/koha-plugin-sip2patron.kpz`
+
+In order to use this plugin, you must copy `SIP-plugin.patch`
+(found in this directory) to `/usr/share/koha/lib` and apply it using:
+
+```
+patch -p0 <SIP-plugin.patch
+```
+
+The plugin and patch cause the SIP2 server to check that the KANOPY_OK
+patron attribute is set for the patron being queried by Kanopy.
+
+#### Add patron attribute
+
+(In the following, replace `rpl` and `RPL` with your actual Koha library instance name,
+lower- or upper-case as appropriate.)
+
+First, enable the ExtendedPatronAttributes preference.  Then in
+Administration / Patron Attribute Types, create a new attribute type
+called KANOPY_OK.  This has an authorized value category of YES_NO,
+and will be used to indicate that the patron is allowed to use Kanopy.
+
+#### Add kanopy user
+
+On the Koha server, add a new user called "kanopy" using this command as root:
+
+    adduser kanopy
+
+Respond to the password prompt by entering a hard-to-guess password.
+
+In the following examples, replace `**password**` with the password you just
+assigned to the kanopy user.
+
+#### Add kanopy patron
+
+In the Koha staff client, add a patron with these attributes:
+
+* Surname: Kanopy
+* Primary phone: 555-1212
+* Primary email: none@example.com
+* Card number: R9900
+* Category: Staff
+* Username: kanopy
+* Password: for simplicity, same as user password above
+* Circulation note: This is not a real patron! It is used only for Kanopy authentication. Do not check out books to this patron.
+* Patron is allowed to use Kanopy: Yes
+
+After saving the patron, click on More / Set permissions, enable
+"Check out and check in items (circulate)", and click on Save.
+
+#### Enable SIP2 in Koha
+
+Log into the Koha server as root using ssh.  Then run:
+
+    koha-sip --enable rpl
+
+Edit `/etc/koha/sites/rpl/SIPconfig.xml`.
+
+In the "listeners" section, remove the IP address restriction in
+the port setting for the 6001/tcp service, so that it looks like this:
+
+     port="6001/tcp"
+
+The "accounts" section should have one entry:
+
+    <login id="kanopy" password="**password**" delimiter="|"
+     error-detect="enabled" institution="RPL"
+     plugin_class="Koha::Plugin::Com::Bloovis::Sip2patron" />
+
+Make the password match the patron's password that was set above.
+
+The "institutions" section should have one entry:
+
+    <institution id="RPL" implementation="ILS" parms="">
+          <policy checkin="true" renewal="true" checkout="true"
+            status_update="false" offline="false"
+          timeout="100"
+            retries="5" />
+    </institution>
+
+Start the SIP server:
+
+    koha-sip --restart rpl
+
+#### Test SIP2
+
+Use this command:
+
+    telnet localhost 6001
+
+Enter the login message:
+
+    9300CNkanopy|CO**password**|CPRPL|
+
+where `**password**` is the password of the kanopy patron.
+This should return the response:
+
+    941
+
+Then check the kanopy patron using this message:
+
+    6300020180906    174600Y         AORPL|AAkanopy|AD**password**
+
+This should return the following response (line split for clarity):
+
+    64              00020180907    074824000000000000000000000000AORPL|AARPLKANOPY|
+    AE Kanopy|BLY|CQY|CC5|BEnone@example.com|BF555-1212|PCS|PIY|AFGreetings from Koha. |
+
+Enter a blank line to exit.
+
+To verify that the validation code is really working, change
+the Kanopy patron's "Patron is allowed to use Kanopy" attibute to No, and run
+the above tests again.  This time, the final response should say
+something about an invalid patron cardnumber instead of "Greetings from Koha".
+
+If something goes wrong, be aware that the SIP2 server writes its log
+messages to `/var/log/messages`.  This command will find those messages:
+
+    egrep koha_sip /var/log/messages | less
+
+#### Create SSH tunnel
+
+The SIP2 protocol is not encrypted, so the client must set up an ssh tunnel
+that encrypts the SIP2 traffic.  On a client computer, run this:
+
+    ssh -f -N -L 9876:koha.example.com:6001 kanopy@koha.example.com
+
+This sets up an ssh tunnel from port 9876 on the local (client) machine
+to port 6001 on the Koha server (`koha.example.com`).
+After you enter the password for kanopy, ssh will go into the background.
+Then you can use this to test the tunnel:
+
+    telnet localhost 9876
+
+Then enter the SIP2 messages as described in the previous section.
