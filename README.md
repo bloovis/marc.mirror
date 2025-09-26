@@ -200,6 +200,9 @@ try uncommenting some or all of those `system` calls, or add some of
 your own.  Then after editing the file, be sure to restart plack and SIP
 using the commands shown above.
 
+If you update Koha (using `apt update koha-common`) you will need to re-apply
+this patch, because the update will overwrite the patched files.
+
 #### Add patron attribute
 
 In the Koha staff client, navigate to More / Adminstration / System preferences.
